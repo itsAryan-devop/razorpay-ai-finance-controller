@@ -68,3 +68,11 @@
 - 3 new handler tests (resolves residue, resolved pairings are correct, confidence gates routing). **10 tests pass.** CI runs generate → invariants → matcher → pipeline → pytest. requirements pins anthropic.
 - ⚠️ Real-LLM path NOT yet validated (no key). Aryan: add ANTHROPIC_API_KEY to .env and `py src/pipeline.py` to see the model path + justifications.
 - **→ Day 7: guardrails** — make audit_log append-only + hash-chained (tamper-evident); dry-run default vs --execute; idempotency; a "what this doesn't do" honest-limits section. **→ Day 8: thin Streamlit UI. → Day 9: README + architecture doc. → Day 10: video. → Day 11: submit.**
+
+## 2026-08-25 — Day 7: guardrails (explainable · bounded · gated)
+- `src/audit.py`: append-only, SHA-256 **hash-chained** audit log. Each entry = hash(prev + canonical(record)); editing any past record breaks every later link. `verify()` recomputes the chain. Tamper-evidence for a money-moving agent (Track 04 + RBI FREE-AI: replayable, non-repudiable trail).
+- Pipeline now **gated + dry-run by default**: only high-confidence AUTO_RESOLVE may auto-apply, and only with `--execute`; FLAG/ESCALATE always wait for a human.
+  - DRY-RUN: 0 applied, 3 held for review. EXECUTE: 1 applied (conf 1.0 AUTO_RESOLVE), 2 held (conf 0.5 FLAG). Audit chain verifies OK both runs.
+- 2 audit tests (chain verifies; tampering with history is detected). **12 tests pass.**
+- This directly demonstrates Razorpay's exact words — "every money action explainable, bounded and gated" — as working code, not prose.
+- **→ Day 8: thin Streamlit UI** (recon dashboard + exception queue + audit viewer). **→ Day 9: README + architecture doc (highest-value artifact — "repo is your resume"). → Day 10: 5-min video (Aryan). → Day 11: submit (deadline Sep 5).**

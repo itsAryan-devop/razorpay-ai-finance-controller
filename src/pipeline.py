@@ -10,11 +10,12 @@ Run:  py src/pipeline.py            (heuristic fallback, no key needed)
       set ANTHROPIC_API_KEY in .env to run the real LLM path.
 """
 import csv
-import json
 import os
+import sys
 
 import matcher
 import llm_handler
+import audit
 
 
 def _true_ghosts():
@@ -34,7 +35,7 @@ def _pairing_stats(results, truth_ghosts):
     return len(mis), correct, escalated
 
 
-def main():
+def main(dry_run=True):
     ledger, recon = matcher._load()
     results = matcher.reconcile(ledger, recon)
     truth_ghosts = _true_ghosts()
@@ -48,16 +49,28 @@ def main():
     n, corr, esc = _pairing_stats(results, truth_ghosts)
     print(f"AFTER  handler ({engine}): {corr}/{n} paired correctly, {esc} still escalated")
 
-    # audit log (Day 7 makes this append-only + hash-chained; here: one record per decision)
+    # ---- GUARDRAILS: gate every decision, then write a tamper-evident audit entry ----
+    # BOUNDED/GATED: only high-confidence AUTO_RESOLVE may be auto-applied, and only
+    # when --execute is passed. FLAG/ESCALATE always wait for a human. Dry-run is default.
+    mode = "EXECUTE" if not dry_run else "DRY-RUN"
     path = os.path.join(matcher.D, "audit_log.jsonl")
-    with open(path, "w", encoding="utf-8") as f:
-        for rec in records:
-            f.write(json.dumps(rec) + "\n")
-    print(f"wrote {len(records)} handler decisions to data/generated/audit_log.jsonl")
+    if os.path.exists(path):
+        os.remove(path)                       # fresh, verifiable chain per demo run
+    applied = 0
+    for rec in records:
+        can_apply = (not dry_run) and rec["route"] == "AUTO_RESOLVE"
+        action = "APPLIED" if can_apply else "PROPOSED"
+        applied += can_apply
+        audit.append(path, {**rec, "action": action, "mode": mode})
+
+    ok, count = audit.verify(path)
+    print(f"\n[{mode}] {applied} applied, {len(records) - applied} held for human review")
+    print(f"audit chain: {count} entries, integrity {'OK' if ok else 'BROKEN'} "
+          f"(data/generated/audit_log.jsonl)")
     for rec in records:
         print(f"   {rec['entity_id']}: {rec['route']} (conf {rec['confidence']}) "
               f"via {rec['engine']} -- {rec['reason']}")
 
 
 if __name__ == "__main__":
-    main()
+    main(dry_run="--execute" not in sys.argv)
