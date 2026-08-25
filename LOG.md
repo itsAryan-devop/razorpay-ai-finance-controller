@@ -52,3 +52,9 @@
 - This is the intended shape: rules nail the structural exceptions, escalate genuine ambiguity, and the 2 escalated cases are precisely what the Day-6 LLM handler will resolve (measured before/after). A believable 0.984 beats a suspicious 1.000.
 - selftest_data.py gained a MISATTRIBUTED invariant (real pid uncredited, true-match ghost credit exists same-amount). All green.
 - **→ Day 5: formalize the eval harness** — committed held-out split (seed), RESULTS.md regeneration, pytest tests wrapping the invariants + a matcher regression test. Then Day 6: the LLM exception handler on the escalated residue.
+
+## 2026-08-25 — Day 5: pytest eval harness wired into CI
+- tests/: conftest.py regenerates deterministic data (seed 42) before tests; test_data.py wraps the 9 ground-truth invariants; test_matcher.py = 6 behaviour/regression tests (accuracy in [0.90,1.0) so a future tautological 1.0 FAILS the build; missing-credit fully detected; structural exceptions exact; ambiguity escalates with >1 candidate; auto-pairings correct; money conserved on clean). **7 tests pass in 0.19s.**
+- CI now runs: generate → invariants → matcher → pytest, on every push. requirements.txt pins pytest.
+- Nice property: the accuracy test asserts `< 1.0`, so if anyone ever "achieves" 100% they've re-introduced the tautology and CI goes red. The harness enforces honesty.
+- **→ Day 6: LLM exception handler** on the 2 escalated (ambiguous) misattributions + any FLAG cases. Design: real Anthropic API when ANTHROPIC_API_KEY is set, deterministic heuristic fallback otherwise (graceful degradation so the pipeline + CI run keyless). LLM proposes a pairing/resolution + confidence + routed action (AUTO_RESOLVE/FLAG/ESCALATE); code does all arithmetic. NOTE: no key set → I can build+wire+fallback-test it, but Aryan must add ANTHROPIC_API_KEY to .env to validate the real-LLM path.
