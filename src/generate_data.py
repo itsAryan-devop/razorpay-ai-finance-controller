@@ -133,6 +133,7 @@ def generate():
         })
 
         note = ""
+        truth_pid, truth_oid = pid, oid
         if label == "CLEAN":
             add_recon(pid, "payment", amount, fee_base, gst, net, 0,
                       _settled_date(captured), oid)
@@ -172,14 +173,16 @@ def generate():
             note = "captured in ledger but absent from all settlements"
 
         elif label == "EXTRA_CREDIT":
-            # ledger order exists but the recon credit is attributed to an UNKNOWN payment id
+            # money arrives under an UNKNOWN payment id with no ledger order at all
+            ledger_rows.pop()                              # this order never existed in the books
             ghost = _uid("pay_", rng)
             add_recon(ghost, "payment", amount, fee_base, gst, net, 0,
-                      _settled_date(captured), "")     # no order_id -> unexplained
-            note = "recon credit with no matching ledger order (unknown payment id)"
+                      _settled_date(captured), "")         # no order_id -> unexplained
+            truth_pid, truth_oid = ghost, ""
+            note = "orphan recon credit, no ledger order (money in under unknown id)"
 
         truth_rows.append({
-            "payment_id": pid, "order_id": oid, "amount": amount,
+            "payment_id": truth_pid, "order_id": truth_oid, "amount": amount,
             "label": label, "note": note,
         })
 

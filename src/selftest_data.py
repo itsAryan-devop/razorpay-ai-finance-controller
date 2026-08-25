@@ -62,7 +62,8 @@ def main() -> int:
     check("EXTRA_CREDIT recon rows have no ledger order",
           all(r["entity_id"] not in ledger_pids for r in extra))
 
-    check("ground truth covers every ledger order", len(tru) == len(led))
+    check("every ledger order has a ground-truth label",
+          {l["payment_id"] for l in led} <= {t["payment_id"] for t in tru})
 
     ok = all(passed for _, passed in checks)
     for name, passed in checks:

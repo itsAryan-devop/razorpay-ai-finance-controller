@@ -172,7 +172,11 @@ Track 04 locked. Scaffold created: `PLAN.md` (roadmap + architecture mindmap), `
 - `src/generate_data.py`: 120 ledger orders, 127 recon rows, ground_truth.csv answer key. Paise integers, seed 42, real fee formula. Plants 7 exception types (CLEAN 63 / TIMING_VARIANCE 14 / FEE_MISMATCH 8 / REFUND_IN_LATER_CYCLE 12 / DUPLICATE 5 / MISSING_CREDIT 10 / EXTRA_CREDIT 8).
 - `src/selftest_data.py`: 8 invariants asserted, all PASS (exit 0) — this is what makes "provable correctness" real. Matcher will need a 2-paise fee tolerance (real fees round ±1 paise).
 - Output files are gitignored (data/generated/); generator + selftest are committed-worthy.
-- **→ Next step (Day 3-4): deterministic matcher** — pass1 exact (payment_id+amount), pass2 fuzzy (amount±fee-tol, date±window), pass3 net-settlement decomposition → classify remainder into typed exception queue → score vs ground_truth.csv (precision/recall per exception type). Then Day 5 eval harness, Day 6 LLM exception handler.
+### ✅ Day 3 DONE — deterministic matcher built (src/matcher.py)
+- 3 passes + classification precedence, emits exceptions.csv. Score vs ground truth: accuracy 1.000, match rate 0.911.
+- **⚠️ The 1.000 is TAUTOLOGICAL** (I wrote both generator and matcher → rules are exact inverses). Proves the pipeline works, NOT that matching is good. A believable number beats a perfect one — do not brag 100% in the README.
+- Also fixed EXTRA_CREDIT to be a clean orphan (ledger now 112 orders, recon 127, truth 120); selftest still green.
+- **→ Day 4 (the real work): inject ambiguity the deterministic rules can't resolve** — EXTRA_CREDIT↔MISSING_CREDIT amount-pairing with collisions, boundary fee/timing cases, non-zero label noise (stated in README). THEN honest sub-100 numbers, and the Day-6 LLM handler can measurably beat the deterministic baseline on the hard tail. Day 5 = formalize eval harness (held-out split, pass@k/pass^k on the LLM part).
 
 ## 11. Competitive Awareness
 
