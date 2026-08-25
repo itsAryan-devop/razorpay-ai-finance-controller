@@ -1,0 +1,8 @@
+razorpay>=1.4.2
+python-dotenv>=1.0.1
+requests>=2.32.0
+pandas>=2.2.0
+# Added later as phases land:
+# anthropic>=0.39.0
+# streamlit>=1.39.0
+# pytest>=8.0.0
