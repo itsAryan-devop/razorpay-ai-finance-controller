@@ -71,6 +71,26 @@ def _uid(prefix: str, rng: random.Random, n: int = 14) -> str:
     return prefix + "".join(rng.choice(alpha) for _ in range(n))
 
 
+NAMES = ["Rhea Nair", "Arjun Rao", "Kavya Iyer", "Dev Mehta", "Sara Khan",
+         "Vikram Bose", "Ira Shah", "Neel Gupta", "Tara Menon", "Om Verma",
+         "Zoya Ali", "Kabir Jain", "Meera Das", "Rohan Sethi", "Anaya Roy"]
+
+
+def make_customer(rng: random.Random) -> tuple[str, str]:
+    """Returns (display_name, short_code). Code = initials + 3 digits, e.g. 'RN482'."""
+    name = rng.choice(NAMES)
+    code = "".join(w[0] for w in name.split()) + str(rng.randint(100, 999))
+    return name, code
+
+
+def noisy_hint(code: str, rng: random.Random) -> str:
+    """A bank narration hint for a misattributed credit: usually the full code,
+    sometimes just the initials — a fuzzy signal rules can't safely use but an
+    LLM (or a text heuristic) can weigh. This is what makes the LLM handler earn
+    its place on the escalated residue."""
+    return code if rng.random() < 0.7 else code[:2]
+
+
 def _settled_date(captured: dt.date, extra_days: int = 0) -> dt.date:
     """T+2 working-day settlement (naive: +2 calendar days here + optional skew)."""
     return captured + dt.timedelta(days=2 + extra_days)
@@ -107,7 +127,7 @@ def generate():
         return batches[d]
 
     def add_recon(entity_id, rtype, amount, fee_base, gst, credit, debit,
-                  settled_date, order_id="", method="netbanking"):
+                  settled_date, order_id="", method="netbanking", description=""):
         sid, utr = batch_for(settled_date)
         recon_rows.append({
             "entity_id": entity_id,
@@ -122,6 +142,7 @@ def generate():
             "settled_at": settled_date.isoformat(),
             "order_id": order_id,
             "method": method,
+            "description": description,          # free-text bank narration (noisy signal)
         })
 
     for i, label in enumerate(labels):
@@ -132,6 +153,7 @@ def generate():
         captured = START + dt.timedelta(days=rng.randint(0, SPAN_DAYS))
         pid = _uid("pay_", rng)
         oid = _uid("order_", rng)
+        cust_name, code = make_customer(rng)
         fee_base, gst = razorpay_fee_paise(amount)
         net = amount - fee_base - gst
 
@@ -139,7 +161,7 @@ def generate():
         ledger_rows.append({
             "order_id": oid, "payment_id": pid, "amount": amount,
             "method": "netbanking", "captured_at": captured.isoformat(),
-            "status": "captured",
+            "status": "captured", "customer": f"{cust_name} ({code})",
         })
 
         note = ""
@@ -194,9 +216,11 @@ def generate():
         elif label == "MISATTRIBUTED_CREDIT":
             # money DID arrive, but the settlement attributes it to a ghost payment id.
             # real order stays in the ledger; the matching credit hides under `ghost`.
+            # its bank narration carries a NOISY hint of the true customer code.
             ghost = _uid("pay_", rng)
             add_recon(ghost, "payment", amount, fee_base, gst, net, 0,
-                      _settled_date(captured, rng.choice([0, 1])), "")
+                      _settled_date(captured, rng.choice([0, 1])), "",
+                      description=f"NEFT/{noisy_hint(code, rng)}")
             note = f"true_match={ghost}"                   # answer key for the pairing task
 
         truth_rows.append({

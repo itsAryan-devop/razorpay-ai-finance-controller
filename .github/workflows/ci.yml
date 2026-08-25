@@ -21,5 +21,7 @@ jobs:
         run: python src/selftest_data.py
       - name: Run matcher (baseline metrics)
         run: python src/matcher.py
+      - name: Run pipeline (handler on escalated residue, keyless heuristic)
+        run: python src/pipeline.py
       - name: Test suite
         run: pytest -q

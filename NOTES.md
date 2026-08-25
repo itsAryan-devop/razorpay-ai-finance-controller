@@ -180,7 +180,15 @@ Track 04 locked. Scaffold created: `PLAN.md` (roadmap + architecture mindmap), `
 - New exception MISATTRIBUTED_CREDIT (money under wrong pid), 11 cases over 4 collision amounts → genuine pairing ambiguity. Matcher does a fuzzy pairing pass: unique→AUTO-resolve, collision→ESCALATE (doesn't guess), none→MISSING.
 - **Honest metrics (was tautological 1.000):** classification accuracy **0.984**, match rate **0.911**, misattribution pairing **9/11 auto + 2 escalated**, EXTRA_CREDIT precision **0.80**. Written to RESULTS.md.
 - The 2 escalated cases = the exact residue for the Day-6 LLM handler (measured before/after improvement).
-- **→ Day 5: eval harness** (held-out split w/ committed seed, RESULTS.md regen, pytest wrapping invariants + matcher regression). **→ Day 6: LLM exception handler** on the escalated residue — build with Anthropic API when ANTHROPIC_API_KEY present + deterministic heuristic fallback so the pipeline runs keyless (graceful degradation). NOTE: no API key set yet, so Day 6 real-LLM path can't be validated by me — Aryan will need to add ANTHROPIC_API_KEY to .env to run it live.
+### ✅ Day 5 DONE — pytest eval harness in CI
+10 tests total (data invariants + matcher behaviour + handler). Accuracy test asserts `[0.90,1.0)` so a tautological 1.0 fails the build. CI: generate → invariants → matcher → pipeline → pytest.
+
+### ✅ Day 6 DONE — LLM exception handler (the "meaningful AI" core)
+- Added a fuzzy signal (customer code + noisy bank-narration hint) so the LLM has a real job. `src/llm_handler.py` (Anthropic when keyed, transparent heuristic fallback) + `src/pipeline.py` (matcher→handler→before/after + audit_log.jsonl).
+- **Measured value (keyless): misattribution pairing 8/11 → 11/11.** Confidence-gated routing (AUTO_RESOLVE/FLAG/ESCALATE).
+- RNG note: adding customer/hint fields reshuffled the seed-42 set; deterministic baseline now accuracy **0.976**, EXTRA_CREDIT prec **0.73**, 3 escalated. RESULTS.md refreshed.
+- ⚠️ **Aryan action: add ANTHROPIC_API_KEY to .env** to validate the real-LLM path (`py src/pipeline.py`). Heuristic fallback is what CI/keyless runs use.
+- **→ Day 7: guardrails** (append-only hash-chained audit log, dry-run/execute, idempotency, honest-limits section). **→ Day 8: Streamlit UI. → Day 9: README+architecture. → Day 10: video. → Day 11: submit (deadline Sep 5).**
 
 ## 11. Competitive Awareness
 
