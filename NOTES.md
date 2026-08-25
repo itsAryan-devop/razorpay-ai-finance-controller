@@ -188,7 +188,25 @@ Track 04 locked. Scaffold created: `PLAN.md` (roadmap + architecture mindmap), `
 - **Measured value (keyless): misattribution pairing 8/11 → 11/11.** Confidence-gated routing (AUTO_RESOLVE/FLAG/ESCALATE).
 - RNG note: adding customer/hint fields reshuffled the seed-42 set; deterministic baseline now accuracy **0.976**, EXTRA_CREDIT prec **0.73**, 3 escalated. RESULTS.md refreshed.
 - ⚠️ **Aryan action: add ANTHROPIC_API_KEY to .env** to validate the real-LLM path (`py src/pipeline.py`). Heuristic fallback is what CI/keyless runs use.
-- **→ Day 7: guardrails** (append-only hash-chained audit log, dry-run/execute, idempotency, honest-limits section). **→ Day 8: Streamlit UI. → Day 9: README+architecture. → Day 10: video. → Day 11: submit (deadline Sep 5).**
+### ✅ Day 7 DONE — guardrails (explainable · bounded · gated)
+`src/audit.py` append-only SHA-256 hash-chained log (tamper-evident, tested). Pipeline dry-run by default; only high-confidence AUTO_RESOLVE applies with `--execute`, rest held for human. DRY-RUN 0 applied / EXECUTE 1 applied. 12 tests pass.
+
+### ✅ Day 9 (README) DONE EARLY — the portfolio artifact
+Full README.md written: honest metrics up top, architecture diagram, how-to-run, guardrails + RBI FREE-AI mapping, "what broke" pointer, honest limits, repo layout.
+
+## 🟢 CURRENT STATE (end of autonomous session, 2026-08-25)
+**Days 1-7 + README complete. Working, tested, guarded end-to-end system, all committed under Aryan's identity.** 7 commits. 12 passing tests. CI green-by-design. Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11.
+
+**Remaining before Sep 5 deadline:**
+- **Day 8: Streamlit UI** (recon dashboard + exception queue + audit viewer) — left for when Aryan is back; it's visual/iterative and best reviewed live. Adds `streamlit` dep. NEXT BUILD.
+- **Day 10: 5-min pitch video** — Aryan records. Lead with metrics, then show the escalation/guardrails, then "what broke."
+- **Day 11: submit the form** (https://forms.gle/d9r2gvxp8cmoZhon9).
+
+**Aryan action items when back:**
+1. (optional) add `ANTHROPIC_API_KEY` to `.env` + `py src/pipeline.py` to see the real-LLM path.
+2. Decide: push repo to GitHub (public repo is the submission — needs a remote; I did NOT create one, that's an external publish action for you to approve).
+3. Fill the application form + sort the Thapar academic/relocation question.
+4. Read LOG.md top-to-bottom — it's the "what broke" narrative for the pitch.
 
 ## 11. Competitive Awareness
 
