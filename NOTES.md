@@ -176,7 +176,11 @@ Track 04 locked. Scaffold created: `PLAN.md` (roadmap + architecture mindmap), `
 - 3 passes + classification precedence, emits exceptions.csv. Score vs ground truth: accuracy 1.000, match rate 0.911.
 - **⚠️ The 1.000 is TAUTOLOGICAL** (I wrote both generator and matcher → rules are exact inverses). Proves the pipeline works, NOT that matching is good. A believable number beats a perfect one — do not brag 100% in the README.
 - Also fixed EXTRA_CREDIT to be a clean orphan (ledger now 112 orders, recon 127, truth 120); selftest still green.
-- **→ Day 4 (the real work): inject ambiguity the deterministic rules can't resolve** — EXTRA_CREDIT↔MISSING_CREDIT amount-pairing with collisions, boundary fee/timing cases, non-zero label noise (stated in README). THEN honest sub-100 numbers, and the Day-6 LLM handler can measurably beat the deterministic baseline on the hard tail. Day 5 = formalize eval harness (held-out split, pass@k/pass^k on the LLM part).
+### ✅ Day 4 DONE — injected real ambiguity, honest numbers now
+- New exception MISATTRIBUTED_CREDIT (money under wrong pid), 11 cases over 4 collision amounts → genuine pairing ambiguity. Matcher does a fuzzy pairing pass: unique→AUTO-resolve, collision→ESCALATE (doesn't guess), none→MISSING.
+- **Honest metrics (was tautological 1.000):** classification accuracy **0.984**, match rate **0.911**, misattribution pairing **9/11 auto + 2 escalated**, EXTRA_CREDIT precision **0.80**. Written to RESULTS.md.
+- The 2 escalated cases = the exact residue for the Day-6 LLM handler (measured before/after improvement).
+- **→ Day 5: eval harness** (held-out split w/ committed seed, RESULTS.md regen, pytest wrapping invariants + matcher regression). **→ Day 6: LLM exception handler** on the escalated residue — build with Anthropic API when ANTHROPIC_API_KEY present + deterministic heuristic fallback so the pipeline runs keyless (graceful degradation). NOTE: no API key set yet, so Day 6 real-LLM path can't be validated by me — Aryan will need to add ANTHROPIC_API_KEY to .env to run it live.
 
 ## 11. Competitive Awareness
 

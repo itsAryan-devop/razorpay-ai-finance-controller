@@ -40,14 +40,21 @@ FEE_TOLERANCE_PAISE = 2             # real fees showed +/-1 paise rounding vs fo
 
 # exception mix (must sum to ~1.0). CLEAN dominates, like real life.
 MIX = {
-    "CLEAN":                 0.52,
+    "CLEAN":                 0.43,
     "TIMING_VARIANCE":       0.12,
     "FEE_MISMATCH":          0.07,
     "REFUND_IN_LATER_CYCLE": 0.10,
     "DUPLICATE":             0.04,
     "MISSING_CREDIT":        0.08,
-    "EXTRA_CREDIT":          0.07,   # injected as recon rows with no ledger order
+    "EXTRA_CREDIT":          0.07,   # recon rows with no ledger order (truly unexpected money)
+    "MISATTRIBUTED_CREDIT":  0.09,   # money in under a WRONG payment id -> needs fuzzy pairing
 }
+
+# Misattributed credits draw amounts from a small pool ON PURPOSE, so several share
+# the same amount. That makes amount+date pairing genuinely AMBIGUOUS for a rules-only
+# matcher (it can detect the misattribution but not always resolve which credit is whose)
+# -> honest sub-100 numbers, and a real job for the LLM exception handler (Day 6).
+COLLISION_AMOUNTS = [99900, 149900, 249900, 349900]   # paise
 
 
 # ------------------------------------------------------------------- real fee economics
@@ -118,7 +125,10 @@ def generate():
         })
 
     for i, label in enumerate(labels):
-        amount = rng.randint(100, 5000) * 100          # Rs 100..5000, in paise
+        if label == "MISATTRIBUTED_CREDIT":
+            amount = rng.choice(COLLISION_AMOUNTS)     # forced collisions -> pairing ambiguity
+        else:
+            amount = rng.randint(100, 5000) * 100      # Rs 100..5000, in paise
         captured = START + dt.timedelta(days=rng.randint(0, SPAN_DAYS))
         pid = _uid("pay_", rng)
         oid = _uid("order_", rng)
@@ -180,6 +190,14 @@ def generate():
                       _settled_date(captured), "")         # no order_id -> unexplained
             truth_pid, truth_oid = ghost, ""
             note = "orphan recon credit, no ledger order (money in under unknown id)"
+
+        elif label == "MISATTRIBUTED_CREDIT":
+            # money DID arrive, but the settlement attributes it to a ghost payment id.
+            # real order stays in the ledger; the matching credit hides under `ghost`.
+            ghost = _uid("pay_", rng)
+            add_recon(ghost, "payment", amount, fee_base, gst, net, 0,
+                      _settled_date(captured, rng.choice([0, 1])), "")
+            note = f"true_match={ghost}"                   # answer key for the pairing task
 
         truth_rows.append({
             "payment_id": truth_pid, "order_id": truth_oid, "amount": amount,

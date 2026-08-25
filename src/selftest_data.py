@@ -65,6 +65,19 @@ def main() -> int:
     check("every ledger order has a ground-truth label",
           {l["payment_id"] for l in led} <= {t["payment_id"] for t in tru})
 
+    # MISATTRIBUTED: real order is uncredited directly, but its true-match ghost
+    # credit exists as an orphan of the same amount (the pairing answer key).
+    recon_pay = {r["entity_id"]: r for r in rec if r["type"] == "payment"}
+    mis = [t for t in tru if t["label"] == "MISATTRIBUTED_CREDIT"]
+
+    def ghost_of(note):
+        return note.split("true_match=")[1] if "true_match=" in note else ""
+    check("MISATTRIBUTED: real pid uncredited, true ghost credit exists same-amount",
+          all(pay_count[t["payment_id"]] == 0
+              and ghost_of(t["note"]) in recon_pay
+              and int(recon_pay[ghost_of(t["note"])]["amount"]) == int(t["amount"])
+              for t in mis))
+
     ok = all(passed for _, passed in checks)
     for name, passed in checks:
         print(("PASS" if passed else "FAIL"), name)

@@ -34,8 +34,10 @@ ONTIME_MAX_DAYS = 2          # T+2. NOTE: synthetic data ignores weekends; a rea
 
 EXCEPTION_LABELS = [
     "CLEAN", "TIMING_VARIANCE", "FEE_MISMATCH", "REFUND_IN_LATER_CYCLE",
-    "DUPLICATE", "MISSING_CREDIT", "EXTRA_CREDIT",
+    "DUPLICATE", "MISSING_CREDIT", "EXTRA_CREDIT", "MISATTRIBUTED_CREDIT",
 ]
+
+PAIR_WINDOW_DAYS = 4         # an orphan credit can pair with an order settled within this window
 
 
 def expected_total_fee(amount_paise: int) -> int:
@@ -50,6 +52,8 @@ class Result:
     label: str
     matched_settlement_id: str = ""
     reason: str = ""
+    route: str = "AUTO"            # AUTO (resolved) | ESCALATE (needs human/LLM) | FLAG
+    matched_entity: str = ""       # the paired counterpart id, when applicable
     evidence: dict = field(default_factory=dict)
 
 
@@ -76,6 +80,7 @@ def reconcile(ledger, recon) -> list[Result]:
 
     ledger_pids = {l["payment_id"] for l in ledger}
     results: list[Result] = []
+    unmatched: list[dict] = []       # deferred: could be MISSING_CREDIT or MISATTRIBUTED
 
     for l in ledger:
         pid, oid = l["payment_id"], l["order_id"]
@@ -85,9 +90,7 @@ def reconcile(ledger, recon) -> list[Result]:
         refunds = refunds_by_oid.get(oid, [])
 
         if not matches:
-            results.append(Result(pid, "MISSING_CREDIT",
-                reason="captured in ledger but no settlement credit found",
-                evidence={"amount": amount}))
+            unmatched.append(l)                       # decide after the pairing pass
             continue
 
         if len(matches) > 1:
@@ -133,13 +136,46 @@ def reconcile(ledger, recon) -> list[Result]:
             reason="exact match, fee and timing within tolerance",
             evidence={"amount": amount, "settled_days": delta}))
 
-    # orphan recon payment rows -> EXTRA_CREDIT
-    for pid, rows in pay_by_pid.items():
-        if pid not in ledger_pids:
-            for row in rows:
-                results.append(Result(pid, "EXTRA_CREDIT", row["settlement_id"],
-                    reason="settlement credit with no matching ledger order",
-                    evidence={"amount": int(row["amount"]), "order_id": row["order_id"]}))
+    # ---- fuzzy pairing pass: explain unmatched orders with orphan credits ----
+    # An orphan is a settlement credit whose payment id is not in the ledger. An
+    # unmatched order may be MISATTRIBUTED (its money arrived under an orphan id) or
+    # genuinely MISSING. We pair by amount + settlement window. On collisions we do
+    # NOT guess -> we ESCALATE, which is the honest deterministic answer and the exact
+    # residue the LLM handler works on (Day 6).
+    orphans = [r for opid, rows in pay_by_pid.items() if opid not in ledger_pids
+               for r in rows]
+    consumed: set[int] = set()
+
+    for l in unmatched:
+        pid = l["payment_id"]
+        amount = int(l["amount"])
+        captured = _date(l["captured_at"])
+        cands = [r for r in orphans if id(r) not in consumed
+                 and int(r["amount"]) == amount
+                 and 0 <= (_date(r["settled_at"]) - captured).days <= PAIR_WINDOW_DAYS]
+        if len(cands) == 1:
+            r = cands[0]
+            consumed.add(id(r))
+            results.append(Result(pid, "MISATTRIBUTED_CREDIT", r["settlement_id"],
+                route="AUTO", matched_entity=r["entity_id"],
+                reason=f"paired to orphan credit {r['entity_id']} by amount+date",
+                evidence={"amount": amount}))
+        elif len(cands) > 1:
+            results.append(Result(pid, "MISATTRIBUTED_CREDIT", "",
+                route="ESCALATE",
+                reason=f"ambiguous: {len(cands)} orphan credits match amount+window",
+                evidence={"amount": amount, "candidates": [c["entity_id"] for c in cands]}))
+        else:
+            results.append(Result(pid, "MISSING_CREDIT", "",
+                reason="captured in ledger but no settlement credit found",
+                evidence={"amount": amount}))
+
+    # orphan credits never paired -> genuinely unexpected money
+    for r in orphans:
+        if id(r) not in consumed:
+            results.append(Result(r["entity_id"], "EXTRA_CREDIT", r["settlement_id"],
+                reason="settlement credit with no matching ledger order",
+                evidence={"amount": int(r["amount"]), "order_id": r["order_id"]}))
 
     return results
 
@@ -179,10 +215,14 @@ def score(results: list[Result], truth: dict[str, str]):
     print(f"reconciliation match rate: {matched/len(ledger_keys):.3f}  "
           f"({matched}/{len(ledger_keys)} ledger orders tied to a settlement)")
 
+    from collections import Counter
+    routes = Counter(r.route for r in results)
+    print("routing: " + "  ".join(f"{k}={v}" for k, v in sorted(routes.items())))
+
     # confusion (only mismatches)
     mism = [(k, truth.get(k), pred.get(k)) for k in keys if truth.get(k) != pred.get(k)]
     print(f"misclassified: {len(mism)}")
-    for k, t, p in mism[:10]:
+    for k, t, p in mism[:12]:
         print(f"   {k}: truth={t} pred={p}")
 
 
@@ -197,10 +237,27 @@ def write_exceptions(results: list[Result]):
     print(f"\nwrote {len(rows)} exceptions to data/generated/exceptions.csv")
 
 
+def pairing_report(results: list[Result]):
+    """Did we pair each misattributed order to the RIGHT orphan credit?"""
+    notes = {}
+    with open(os.path.join(D, "ground_truth.csv"), encoding="utf-8") as f:
+        for t in csv.DictReader(f):
+            if t["label"] == "MISATTRIBUTED_CREDIT":
+                notes[t["payment_id"]] = t["note"].split("true_match=")[-1]
+    mis = [r for r in results if r.entity_id in notes]
+    resolved = [r for r in mis if r.route == "AUTO"]
+    correct = sum(1 for r in resolved if r.matched_entity == notes[r.entity_id])
+    escalated = sum(1 for r in mis if r.route == "ESCALATE")
+    print(f"\nmisattribution pairing: {len(mis)} cases | {len(resolved)} auto-paired "
+          f"({correct} to the correct credit) | {escalated} escalated as ambiguous")
+    print("  -> the escalated cases are exactly the residue the LLM handler (Day 6) works on.")
+
+
 if __name__ == "__main__":
     ledger, recon = _load()
     results = reconcile(ledger, recon)
     print(f"reconciled {len(ledger)} ledger orders + {len(recon)} recon rows "
           f"-> {len(results)} results\n")
     score(results, _load_truth())
+    pairing_report(results)
     write_exceptions(results)
