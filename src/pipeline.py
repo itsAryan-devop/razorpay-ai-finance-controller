@@ -16,6 +16,14 @@ import sys
 import time
 import uuid
 
+# Load .env BEFORE importing llm_handler (it reads OLLAMA_MODEL/HOST at import time).
+# override=False so real shell env vars and the CI-forced defaults always win.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(override=False)
+except Exception:
+    pass
+
 import matcher
 import llm_handler
 import audit

@@ -22,6 +22,11 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
+try:                                  # load .env before importing modules that read env
+    from dotenv import load_dotenv
+    load_dotenv(override=False)
+except Exception:
+    pass
 import generate_data  # noqa: E402
 import matcher        # noqa: E402
 import pipeline       # noqa: E402
