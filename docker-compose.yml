@@ -9,7 +9,17 @@ services:
       - "8501:8501"
     environment:
       - LOG_LEVEL=INFO
-      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}   # enables the real LLM handler path
+      - LLM_PROVIDER=heuristic     # keyless, no network — the zero-config default
+      # To use a FREE local Ollama running on the HOST (Docker Desktop resolves
+      # host.docker.internal automatically on Windows/Mac):
+      # - LLM_PROVIDER=ollama
+      # - OLLAMA_HOST=http://host.docker.internal:11434
+      # - OLLAMA_MODEL=qwen3:4b
+      # Or the paid API:
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    # On Linux hosts only, uncomment to make host.docker.internal resolve:
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
     volumes:
       - recon-data:/app/data/generated              # persist audit log + DB across runs
 

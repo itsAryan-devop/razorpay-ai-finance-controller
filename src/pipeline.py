@@ -138,8 +138,18 @@ def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
     }
 
 
+def _ensure_data():
+    """Generate the deterministic dataset if it's missing, so the batch entrypoint is
+    self-sufficient (e.g. in a container whose data volume mounts empty over the copy
+    baked at build time)."""
+    if not os.path.exists(os.path.join(matcher.D, "ledger.csv")):
+        import generate_data
+        generate_data.generate()
+
+
 def main(dry_run=True, cycle="adhoc", reset_audit=False):
     obs.configure(os.getenv("LOG_LEVEL", "INFO"))
+    _ensure_data()
     r = run(dry_run=dry_run, cycle=cycle, commit=True, reset_audit=reset_audit)
     log.info("reconciliation run complete", extra={"fields": {
         "cycle": r["cycle"], "run_id": r["run_id"], "mode": r["mode"],
