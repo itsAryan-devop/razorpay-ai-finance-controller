@@ -146,20 +146,27 @@ def _ollama_choose(code, customer, amount, candidates):
     or None on ANY failure (no server, timeout, bad JSON) so the caller falls back to
     the heuristic. Uses structured output (format=json) + temperature 0 for determinism."""
     prompt = _build_prompt(code, customer, amount, candidates)
+    body = {
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "format": "json",                 # constrain output to valid JSON
+        "options": {"temperature": 0},
+        # Reasoning models (qwen3) otherwise spend 40-120s on chain-of-thought before
+        # answering — we only need a narration match, so disable it (measured 42s -> 3s).
+        "think": False,
+    }
     try:
         import requests
-        resp = requests.post(
-            f"{OLLAMA_HOST}/api/chat",
-            timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT),  # connect instant once probed
-            json={
-                "model": OLLAMA_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-                "format": "json",                 # constrain output to valid JSON
-                "options": {"temperature": 0},
-            },
-        )
-        resp.raise_for_status()
+        try:
+            resp = requests.post(f"{OLLAMA_HOST}/api/chat", json=body,
+                                 timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT))
+            resp.raise_for_status()
+        except requests.HTTPError:
+            body.pop("think", None)       # a non-reasoning model may reject 'think' -> retry
+            resp = requests.post(f"{OLLAMA_HOST}/api/chat", json=body,
+                                 timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT))
+            resp.raise_for_status()
         content = resp.json()["message"]["content"]
         return _parse_choice(content)
     except Exception:
@@ -243,8 +250,20 @@ def resolve_escalations(results, ledger, recon, use_llm=None, provider=None):
             out = _ollama_choose(code, "", amount, candidates)
         elif active == "anthropic":
             out = _llm_choose(code, "", amount, candidates)
-        if out is None:                     # provider unused, or it failed on this case
-            engine = "heuristic"
+
+        # Deterministic guard on the model's proposal: "the LLM reads, code VERIFIES."
+        # The chosen credit must have actual narration support for this order's code — an
+        # LLM may interpret a fuzzy signal but must not invent a match that isn't there.
+        # Observed live: qwen3:4b paired order code KI532 to a 'NEFT/SK815' credit at
+        # confidence 0.85 (would auto-apply a WRONG money decision). The guard rejects an
+        # unsupported pick and falls back to the transparent, conservative heuristic.
+        rejected_pick = False
+        if out is not None and _similarity(code, dict(candidates).get(out[0], "")) <= 0.0:
+            out, rejected_pick = None, True
+
+        if out is None:                     # provider unused/failed, or its pick was rejected
+            engine = (f"heuristic (after {active} pick rejected)" if rejected_pick
+                      else "heuristic")
             out = _heuristic_choose(code, candidates)
         chosen, conf, why = out
 

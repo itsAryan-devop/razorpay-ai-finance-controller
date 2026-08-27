@@ -216,6 +216,12 @@ Triggered by Aryan pushing back that it felt too quick / not production-level. D
 - **Broke+fixed:** Windows dead-port TIMES OUT (doesn't refuse), and `localhost` (::1 first) made an absent-server probe ~4s → suite 0.8s→34s. Fixed: default host `127.0.0.1`, 0.4s cached probe, conftest forces heuristic for tests, test fixture uses tiny timeouts. Suite back to 1.7s / 29 green. UI renders on heuristic (fast); Ollama demo is the CLI (engine=ollama in the audit chain).
 - Aryan action: install Ollama, `ollama pull qwen3:4b`, run `py src/pipeline.py` → see engine=ollama. (Child-guide provided in chat.)
 
+### ✅ Real qwen3:4b validated LIVE + over-confidence guard added (2026-08-28) ⭐
+- Ollama installed to **D:** (`/DIR`), `OLLAMA_MODELS=D:\Ollama\models`, qwen3:4b pulled (2.33GB on D, 0 on C), GPU-enabled. Real-LLM path no longer "pending a key" — it's validated live.
+- **Key finding (great pitch material):** with `think:false` (42s→3s), the real model resolved the tail BUT paired order KI532 → a `NEFT/SK815` credit (wrong customer) at conf 0.85 → would AUTO-APPLY a wrong money decision. Confidence gate alone ≠ safe.
+- **Fix:** deterministic verify guard — the LLM's chosen credit must have real narration support (`_similarity>0`), else reject → heuristic → FLAG. "The LLM reads, code VERIFIES." Restores 11/11 (2 AUTO via ollama incl. NG132 the heuristic only flagged; KI532 hallucination caught → FLAG). 32 tests. This is the thesis proven on live evidence.
+- Model files on D; to run: server auto-detected, `py src/pipeline.py` → engine=ollama on clear cases, guard+heuristic on the hallucination.
+
 ### ✅ Docker validated locally end-to-end (2026-08-28)
 - `docker compose up -d --build` → in-build selftest ALL PASS, container up, `localhost:8501` HTTP 200 / health ok (keyless, LLM_PROVIDER=heuristic). Batch in container: `--execute` → 1 applied/2 held/chain OK; re-run → 0 applied/1 skipped (idempotent across container runs via the recon-data volume). Torn down clean; image 822MB retained.
 - **Recovery story for the pitch:** Docker Desktop was crashing on an orphaned AF_UNIX socket no Windows tool could delete; fixed by deleting it from WSL. Pure environment issue, project untouched. (Full detail in LOG.md.)

@@ -84,12 +84,20 @@ def test_ollama_success_path_parses_and_labels_engine(monkeypatch):
     def fake_get(url, **kw):                       # the reachability probe
         return _Resp({"models": [{"name": "qwen3:4b"}]}, 200)
 
-    def fake_post(url, json=None, **kw):           # the /api/chat call
-        # Pick a real candidate id out of the prompt so the pairing is well-formed.
+    def fake_post(url, json=None, **kw):           # the /api/chat call — competent model
+        # A competent model picks the NARRATION-SUPPORTED candidate (so it passes the
+        # deterministic guard). Parse the code + candidates back out of the prompt.
         content = json["messages"][0]["content"]
-        ids = re.findall(r"id=(\S+)", content)
-        chosen = ids[0] if ids else "g1"
-        reply = {"chosen": chosen, "confidence": 0.9, "reason": "stub picked the match"}
+        m = re.search(r"\(code (\S+?)\)", content)
+        code = m.group(1) if m else ""
+        cands = re.findall(r'id=(\S+)\s+narration=("(?:[^"\\]|\\.)*")', content)
+        chosen = cands[0][0] if cands else "g1"
+        for cid, narr_json in cands:
+            narr = __import__("json").loads(narr_json)
+            if code and (code in narr or code[:2] in narr):
+                chosen = cid
+                break
+        reply = {"chosen": chosen, "confidence": 0.9, "reason": "narration supports this order"}
         return _Resp({"message": {"content": __import__("json").dumps(reply)}}, 200)
 
     monkeypatch.setattr(requests, "get", fake_get)
@@ -98,7 +106,7 @@ def test_ollama_success_path_parses_and_labels_engine(monkeypatch):
 
     # unit level: the choose helper parses a well-formed server reply
     out = llm_handler._ollama_choose("RN482", "", 99900, [("g1", "NEFT/RN482")])
-    assert out == ("g1", 0.9, "stub picked the match")
+    assert out == ("g1", 0.9, "narration supports this order")
 
     # end to end: every resolved case is labelled engine='ollama' and routed by confidence
     ledger, recon = matcher._load()
@@ -108,3 +116,42 @@ def test_ollama_success_path_parses_and_labels_engine(monkeypatch):
     assert all(x["route"] == "AUTO_RESOLVE" for x in records)      # conf 0.9 >= 0.75
     valid_ids = {cid for r in results for cid in r.evidence.get("candidates", [])}
     assert all(x["chosen"] in valid_ids for x in records)
+
+
+def test_guard_rejects_unsupported_llm_pick(monkeypatch):
+    """'The LLM reads, code verifies': if the model picks a credit whose narration does
+    NOT support the order's code (an over-confident hallucination — observed live with
+    qwen3), the deterministic guard rejects it and falls back to the heuristic, so a
+    wrong money pairing never auto-applies."""
+    import requests
+
+    def fake_get(url, **kw):
+        return _Resp({"models": [{"name": "qwen3:4b"}]}, 200)
+
+    def fake_post(url, json=None, **kw):           # a MIScalibrated model: picks a wrong credit
+        content = json["messages"][0]["content"]
+        m = re.search(r"\(code (\S+?)\)", content)
+        code = m.group(1) if m else ""
+        cands = re.findall(r'id=(\S+)\s+narration=("(?:[^"\\]|\\.)*")', content)
+        chosen = cands[0][0] if cands else "g1"
+        for cid, narr_json in cands:               # deliberately choose an UNSUPPORTED credit
+            narr = __import__("json").loads(narr_json)
+            if not (code and (code in narr or code[:2] in narr)):
+                chosen = cid
+                break
+        reply = {"chosen": chosen, "confidence": 0.9, "reason": "over-confident wrong pick"}
+        return _Resp({"message": {"content": __import__("json").dumps(reply)}}, 200)
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+
+    ledger, recon = matcher._load()
+    results = matcher.reconcile(ledger, recon)
+    records = llm_handler.resolve_escalations(results, ledger, recon)
+
+    assert any("rejected" in r["engine"] for r in records)         # the guard fired
+    truth = _true_ghosts()                                         # and pairings stay CORRECT
+    for r in results:
+        if r.entity_id in truth and r.matched_entity:
+            assert r.matched_entity == truth[r.entity_id]

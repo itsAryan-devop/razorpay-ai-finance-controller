@@ -84,11 +84,26 @@ which is the property a reconciler needs; a pure-LLM agent's pass^k collapses as
 (≈0.75 per trial → ≈0.42 at pass^3). The LLM only touches the small escalated tail, and its
 output is confidence-gated + audited, so model stochasticity can never silently move money.
 
-## Note on the LLM path
+## The LLM path — validated live on a local model (and it found a real failure mode)
 The numbers above are the **keyless heuristic** fallback so CI is deterministic. The "real
-LLM" path is genuinely runnable at **zero cost via a local Ollama model** (`qwen3:4b`,
-default) — no API key, no quota, no rate limits — or via the Anthropic API when keyed. The
-model's added value is a calibrated confidence and an audit-ready natural-language
-justification per decision; the audit log records the actual `engine`
-(`ollama` / `anthropic` / `heuristic`). Every provider degrades gracefully to the heuristic
-on any failure, so CI and any keyless/server-less run stay deterministic and green.
+LLM" path runs at **zero cost via a local Ollama model** (`qwen3:4b`, default) — no key, no
+quota — or via the Anthropic API when keyed. It is now **validated live** (local qwen3:4b on
+an RTX 3050), and the run produced the most important finding in this project:
+
+- Reasoning models "think" for 40–120 s per call; we send `think:false` (structured
+  extraction needs no chain-of-thought) → **~3 s/call**.
+- The model resolved the escalated tail with rich justifications — **but on one ambiguous
+  case it paired order code `KI532` to a `NEFT/SK815` credit (a different customer) at
+  confidence 0.85 → it would have AUTO-APPLIED a wrong money decision.** Pairing dropped to
+  10/11. A confidence gate alone does **not** stop a mis-calibrated LLM.
+- **Fix — "the LLM reads, code VERIFIES":** a deterministic guard checks that the model's
+  chosen credit actually has narration support for the order's code. An unsupported pick
+  (the hallucination) is **rejected** and the transparent heuristic takes over. Back to
+  **11/11**: 2 cases AUTO-RESOLVED `via ollama` (with the model's own reasoning), the
+  hallucinated case rejected → `heuristic (after ollama pick rejected)` → **FLAG for a
+  human**. The audit log records the true engine per case.
+
+This is the whole thesis proven on real evidence: rules-first, LLM only on the tail, every
+model proposal deterministically verified and gated, nothing wrong applied silently. Every
+provider still degrades gracefully to the heuristic on any failure, so CI and any
+keyless/server-less run stay deterministic and green.
