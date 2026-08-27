@@ -65,7 +65,7 @@ py src/selftest_data.py      # 9 ground-truth invariants
 py src/matcher.py            # deterministic baseline + per-class metrics + exceptions.csv
 py src/pipeline.py           # end-to-end: matcher → handler → before/after + audit log
 py src/pipeline.py --execute # apply high-confidence auto-resolutions (gated)
-pytest -q                    # 26 tests
+pytest -q                    # 32 tests
 streamlit run app.py         # dashboard + exception queue + audit viewer
 ```
 The LLM path activates when a provider is available; otherwise a transparent
@@ -152,8 +152,14 @@ silently return.
 - Synthetic data (real test-mode settlements are KYC-gated); calibrated to real fees, but not
   real settlement volume or real bank narrations.
 - Timing uses calendar days, not working-day/holiday calculation — noted in the matcher.
-- The real-LLM path is wired and fallback-tested but **not yet validated live** (pending an
-  API key); the reported numbers are the keyless heuristic.
+- The reported **headline numbers are the keyless heuristic** (so CI stays deterministic).
+  The real-LLM path **is validated live** on a local model (qwen3:4b via Ollama) — and that
+  run surfaced a real failure mode: the model auto-resolved clear cases but made one
+  over-confident *wrong* pairing, which a deterministic verify-guard now rejects (falls back
+  to the heuristic → human review). See [RESULTS.md](RESULTS.md).
+- The verify-guard rejects LLM picks with **no** narration support; it is a safety net
+  against unsupported hallucinations, not a proof of correctness — genuinely ambiguous cases
+  still escalate to a human by design.
 - It reconciles and proposes; it does not move money.
 
 ## Repo layout
@@ -168,7 +174,7 @@ src/sources.py         ingestion seam: CSV/SQLite adapters + production stubs
 src/obs.py  src/net.py JSON structured logging · bounded-backoff retries
 app.py                 Streamlit UI: dashboard · exception queue · audit viewer
 Dockerfile  docker-compose.yml   reproducible image (CI builds it every push)
-tests/                 26 pytest cases (run in CI on every push)
+tests/                 32 pytest cases (run in CI on every push)
 ARCHITECTURE.md        components · current-vs-target · scaling · failure modes
 NOTES.md PLAN.md LOG.md RESULTS.md   context, roadmap, failure trail, metrics
 research/              the 4 research reports the design is grounded in

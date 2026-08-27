@@ -227,7 +227,7 @@ Triggered by Aryan pushing back that it felt too quick / not production-level. D
 - **Recovery story for the pitch:** Docker Desktop was crashing on an orphaned AF_UNIX socket no Windows tool could delete; fixed by deleting it from WSL. Pure environment issue, project untouched. (Full detail in LOG.md.)
 
 ## 🟢 CURRENT STATE (updated 2026-08-27)
-**Days 1-8 + README + production-hardening + free-local-LLM (Ollama) complete. Working, tested, guarded, DOCKERIZED end-to-end system with a UI, a zero-cost local-AI path, and an honest production-readiness story, all committed under Aryan's identity.** 29 passing tests. CI green-by-design (also builds the Docker image; keyless heuristic is the CI default). Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11, EXTRA_CREDIT precision 0.73→1.00 post-handler.
+**Days 1-8 + README + production-hardening + free-local-LLM (Ollama) complete. Working, tested, guarded, DOCKERIZED end-to-end system with a UI, a zero-cost local-AI path, and an honest production-readiness story, all committed under Aryan's identity.** 32 passing tests. CI green-by-design (also builds the Docker image; keyless heuristic is the CI default). Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11, EXTRA_CREDIT precision 0.73→1.00 post-handler.
 
 **Remaining before Sep 5 deadline:**
 - **Day 10: 5-min pitch video** — Aryan records. Lead with metrics, then show the escalation/guardrails live in the UI, then "what broke." Now also: show the SQLite toggle (same numbers from a real DB) + idempotency + the persistent audit chain — the production story.
