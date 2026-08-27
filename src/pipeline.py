@@ -19,8 +19,10 @@ import uuid
 import matcher
 import llm_handler
 import audit
+import obs
 
 AUDIT_PATH = os.path.join(matcher.D, "audit_log.jsonl")
+log = obs.get_logger("recon.pipeline")
 
 
 def _true_ghosts():
@@ -136,7 +138,14 @@ def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
 
 
 def main(dry_run=True, cycle="adhoc", reset_audit=False):
+    obs.configure(os.getenv("LOG_LEVEL", "INFO"))
     r = run(dry_run=dry_run, cycle=cycle, commit=True, reset_audit=reset_audit)
+    log.info("reconciliation run complete", extra={"fields": {
+        "cycle": r["cycle"], "run_id": r["run_id"], "mode": r["mode"],
+        "n_records": r["n_records"], "accuracy": round(r["metrics"]["accuracy"], 3),
+        "match_rate": round(r["metrics"]["match_rate"], 3),
+        "applied": r["applied"], "skipped": r["skipped"], "held": r["held"],
+        "audit_entries": r["audit"]["count"], "audit_ok": r["audit"]["ok"]}})
     p = r["pairing"]
     print(f"BEFORE handler (deterministic): {p['before']}/{p['total']} misattributions "
           f"paired correctly, {p['escalated_before']} escalated")

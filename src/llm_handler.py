@@ -23,6 +23,23 @@ FLAG_CONF = 0.45      # >= -> FLAG, else stay ESCALATE
 MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
 
 
+MAX_NARRATION = 120       # bank narrations are short; anything longer is suspect
+
+
+def sanitize_narration(text: str, max_len: int = MAX_NARRATION) -> str:
+    """Bank narration is attacker-influenceable free text that we feed to an LLM, so
+    it is untrusted input. Strip control chars / newlines (which is how injection
+    payloads smuggle 'ignore previous instructions'), collapse whitespace, and bound
+    the length. The deterministic heuristic path is injection-immune anyway (it only
+    substring-matches a customer code); this hardens the LLM path, where we ALSO pass
+    the value as JSON-encoded data, never as instructions."""
+    if not text:
+        return ""
+    cleaned = "".join(c if (c.isprintable() and c not in "\r\n\t") else " " for c in text)
+    cleaned = " ".join(cleaned.split())               # collapse runs of whitespace
+    return cleaned[:max_len]
+
+
 def customer_code(customer: str) -> str:
     m = re.search(r"\(([^)]+)\)", customer or "")
     return m.group(1) if m else ""
@@ -59,7 +76,11 @@ def _llm_choose(code, customer, amount, candidates):
         return None
     if not os.getenv("ANTHROPIC_API_KEY"):
         return None
-    lines = "\n".join(f"  - id={cid}  narration=\"{d}\"" for cid, d in candidates)
+    import json
+    # Untrusted narration is JSON-encoded (quotes/specials escaped) and pre-sanitized,
+    # so it cannot break out of its field to be read as an instruction.
+    lines = "\n".join(f"  - id={cid}  narration={json.dumps(sanitize_narration(d))}"
+                      for cid, d in candidates)
     prompt = (
         "You reconcile payments. An order's money settled under the WRONG payment id. "
         "Pick which settlement credit truly belongs to this order, using the bank "
@@ -94,7 +115,8 @@ def resolve_escalations(results, ledger, recon, use_llm=None):
             continue
         code = code_by_pid.get(r.entity_id, "")
         cand_ids = r.evidence.get("candidates", [])
-        candidates = [(cid, desc_by_eid.get(cid, "")) for cid in cand_ids]
+        candidates = [(cid, sanitize_narration(desc_by_eid.get(cid, "")))
+                      for cid in cand_ids]
         amount = r.evidence.get("amount", 0)
 
         engine = "llm"

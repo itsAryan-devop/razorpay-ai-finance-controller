@@ -23,5 +23,14 @@ jobs:
         run: python src/matcher.py
       - name: Run pipeline (handler on escalated residue, keyless heuristic)
         run: python src/pipeline.py
+      - name: Re-run pipeline (idempotency: second execute applies nothing)
+        run: python src/pipeline.py --execute && python src/pipeline.py --execute
       - name: Test suite
         run: pytest -q
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image (runs generate + selftest inside the build)
+        run: docker build -t recon-controller .
