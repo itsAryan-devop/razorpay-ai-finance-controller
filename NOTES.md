@@ -200,13 +200,24 @@ Full README.md written: honest metrics up top, architecture diagram, how-to-run,
 - **Closed the loose end RESULTS.md flagged:** EXTRA_CREDIT precision post-handler **0.73 → 1.00** (colliding credits paired to their order are no longer "unexplained money"). Computed in `pipeline.run()`, shown live, RESULTS.md updated to the real number (2 of 3 are FLAG = proposed/human-confirm).
 - Verified in a real browser: all tabs render, integrity check passes, `--execute` applies 1 / holds 2. `streamlit>=1.39.0` added; `.claude/launch.json` for reproducible launch (port 8501).
 
+### ✅ Production hardening pass DONE (2026-08-27) — answered "is this production-ready?"
+Triggered by Aryan pushing back that it felt too quick / not production-level. Did a *focused* hardening pass (not a full distributed rebuild — that loses; not docs-only — leaves Weakness #1 on paper):
+- **Audit log is now genuinely persistent append-only** (was being wiped every run — a real claim-vs-behavior gap we caught ourselves). Compute/commit split; `run()` is pure, commit is an explicit gated side effect.
+- **Idempotency:** re-running an applied decision → SKIPPED_IDEMPOTENT (re-running a cycle is safe). Proven: two `--execute` = 1 applied then 0/1 skipped.
+- **Ingestion seam** `sources.py`: `ReconciliationSource` (CsvSource, real SqliteSource w/ unit-tested equivalence, CompositeSource, loud stubs for Razorpay API + merchant DB). Matcher source-agnostic. UI CSV↔SQLite toggle.
+- **Ops:** `obs.py` JSON logging, `net.py` retry/backoff, Dockerfile + compose + .dockerignore, CI docker-build + idempotency-recheck jobs. (Docker daemon down locally → image build validated by CI, stated honestly.)
+- **Prompt-injection posture:** `sanitize_narration()` (also the RBI redaction point). Heuristic path injection-immune.
+- **`ARCHITECTURE.md`:** current-vs-target, honest scaling numbers, failure modes, "what we did NOT build and why".
+- **Tests 12 → 26**, all green. Framing locked: "production-grade core + costed path", never "production system".
+
 ## 🟢 CURRENT STATE (updated 2026-08-27)
-**Days 1-8 + README complete. Working, tested, guarded end-to-end system WITH a UI, all committed under Aryan's identity.** 12 passing tests. CI green-by-design. Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11, EXTRA_CREDIT precision 0.73→1.00 post-handler.
+**Days 1-8 + README + production-hardening pass complete. Working, tested, guarded, DOCKERIZED end-to-end system with a UI and an honest production-readiness story, all committed under Aryan's identity.** 26 passing tests. CI green-by-design (now also builds the Docker image). Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11, EXTRA_CREDIT precision 0.73→1.00 post-handler.
 
 **Remaining before Sep 5 deadline:**
-- **Day 10: 5-min pitch video** — Aryan records. Lead with metrics, then show the escalation/guardrails live in the UI, then "what broke."
+- **Day 10: 5-min pitch video** — Aryan records. Lead with metrics, then show the escalation/guardrails live in the UI, then "what broke." Now also: show the SQLite toggle (same numbers from a real DB) + idempotency + the persistent audit chain — the production story.
 - **Day 11: submit the form** (https://forms.gle/d9r2gvxp8cmoZhon9).
-- Iterative polish welcome (user said "don't rush to done") — the UI is the natural place to keep refining.
+- Optional: start Docker Desktop + `docker compose up` to sanity-check the image locally (CI already builds it); add `ANTHROPIC_API_KEY` to validate the real-LLM path.
+- Iterative polish welcome (user said "don't rush to done").
 
 **Aryan action items when back:**
 1. (optional) add `ANTHROPIC_API_KEY` to `.env` + `py src/pipeline.py` to see the real-LLM path.

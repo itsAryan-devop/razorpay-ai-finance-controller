@@ -65,7 +65,7 @@ py src/selftest_data.py      # 9 ground-truth invariants
 py src/matcher.py            # deterministic baseline + per-class metrics + exceptions.csv
 py src/pipeline.py           # end-to-end: matcher → handler → before/after + audit log
 py src/pipeline.py --execute # apply high-confidence auto-resolutions (gated)
-pytest -q                    # 12 tests
+pytest -q                    # 26 tests
 streamlit run app.py         # dashboard + exception queue + audit viewer
 ```
 The LLM path activates when `ANTHROPIC_API_KEY` is set in `.env`; otherwise a transparent
@@ -102,6 +102,27 @@ This maps directly onto **RBI FREE-AI** (the RBI framework for AI in finance): A
 and Understandable-by-Design (the audit trail + justifications), and humans retaining final
 authority (the gate). Razorpay is an RBI-regulated payment aggregator; these are not optional.
 
+## Production readiness
+Full engineering assessment — components, current-vs-target, scaling numbers, failure
+modes, RBI data-localization — in **[ARCHITECTURE.md](ARCHITECTURE.md)**. Honest headline:
+this is a **production-grade reconciliation core with a costed path to full production**,
+not a finished distributed system. What's real today:
+- **Ingestion seam** (`sources.py`) — a `ReconciliationSource` interface with CSV + a real
+  SQLite adapter, and documented stubs showing exactly where the live merchant DB + Razorpay
+  settlement API plug in. The matcher is source-agnostic.
+- **Persistent, append-only audit log** with **idempotency** — re-running a settlement cycle
+  never double-applies a decision (`SKIPPED_IDEMPOTENT`).
+- **Ops:** JSON structured logging (`obs.py`), bounded-backoff retries for the API path
+  (`net.py`), a **Dockerfile + docker-compose** (CI builds the image on every push).
+- **Untrusted-input hardening:** bank narration fed to the LLM is sanitized + JSON-encoded
+  (prompt-injection posture); the heuristic path is injection-immune by construction.
+
+```bash
+docker compose up                                   # the reconciliation UI on :8501
+docker run --rm recon-controller \
+  python src/pipeline.py --execute --cycle 2026-07-15   # the batch job
+```
+
 ## What broke, and how we recovered
 Kept honestly in [LOG.md](LOG.md) from day one — e.g. the day-1 spike proving test-mode
 settlements don't populate (→ pivot to calibrated synthetic), a Windows console encoding
@@ -124,9 +145,13 @@ src/selftest_data.py   9 data-integrity invariants
 src/matcher.py         deterministic 3-pass matcher + typed exception queue
 src/llm_handler.py     LLM/heuristic resolver for the escalated residue
 src/pipeline.py        end-to-end run (run()/main) + guardrails + audit log
-src/audit.py           append-only hash-chained audit log
+src/audit.py           persistent append-only hash-chained audit log
+src/sources.py         ingestion seam: CSV/SQLite adapters + production stubs
+src/obs.py  src/net.py JSON structured logging · bounded-backoff retries
 app.py                 Streamlit UI: dashboard · exception queue · audit viewer
-tests/                 12 pytest cases (run in CI on every push)
+Dockerfile  docker-compose.yml   reproducible image (CI builds it every push)
+tests/                 26 pytest cases (run in CI on every push)
+ARCHITECTURE.md        components · current-vs-target · scaling · failure modes
 NOTES.md PLAN.md LOG.md RESULTS.md   context, roadmap, failure trail, metrics
 research/              the 4 research reports the design is grounded in
 ```
