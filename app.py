@@ -75,8 +75,12 @@ with st.sidebar:
 src_obj, src_label = build_source(choice)
 
 # Pure compute on every render (~1 ms); commit to the audit log only on deliberate
-# actions (the Apply button), never on a passive re-render.
-result = pipeline.run(dry_run=not st.session_state.execute, commit=False, source=src_obj)
+# actions (the Apply button), never on a passive re-render. The UI renders on the fast
+# deterministic heuristic so it never blocks on a model call; the local-LLM (Ollama)
+# path is demonstrated via the CLI (`py src/pipeline.py`) and its engine shows in the
+# persisted audit chain below.
+result = pipeline.run(dry_run=not st.session_state.execute, commit=False,
+                      source=src_obj, provider="heuristic")
 m = result["metrics"]
 results = result["results"]
 
@@ -108,7 +112,7 @@ with st.sidebar:
         if st.button("▶️ Apply auto-resolutions", disabled=not confirm,
                      use_container_width=True):
             committed = pipeline.run(dry_run=False, commit=True, cycle="ui",
-                                     source=src_obj)
+                                     source=src_obj, provider="heuristic")
             st.session_state.execute = True
             st.session_state.flash = (
                 f"Committed {committed['applied']} auto-resolution(s) "

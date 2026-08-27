@@ -57,7 +57,10 @@ then applies fuzzy reasoning on the small residue, with confidence-gated routing
 > tautological 100% turns CI red.
 
 ## Note on the LLM path
-The numbers above are the **keyless heuristic** fallback so CI is deterministic. With
-`ANTHROPIC_API_KEY` set, the same residue is resolved by the model, whose added value is a
-calibrated confidence and an audit-ready natural-language justification for each decision.
-(Not yet validated live — pending an API key.)
+The numbers above are the **keyless heuristic** fallback so CI is deterministic. The "real
+LLM" path is genuinely runnable at **zero cost via a local Ollama model** (`qwen3:4b`,
+default) — no API key, no quota, no rate limits — or via the Anthropic API when keyed. The
+model's added value is a calibrated confidence and an audit-ready natural-language
+justification per decision; the audit log records the actual `engine`
+(`ollama` / `anthropic` / `heuristic`). Every provider degrades gracefully to the heuristic
+on any failure, so CI and any keyless/server-less run stay deterministic and green.

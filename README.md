@@ -68,8 +68,26 @@ py src/pipeline.py --execute # apply high-confidence auto-resolutions (gated)
 pytest -q                    # 26 tests
 streamlit run app.py         # dashboard + exception queue + audit viewer
 ```
-The LLM path activates when `ANTHROPIC_API_KEY` is set in `.env`; otherwise a transparent
-text-similarity heuristic runs so the pipeline and CI work with no key.
+The LLM path activates when a provider is available; otherwise a transparent
+text-similarity heuristic runs so the pipeline and CI work with no key and no server.
+
+### Local LLM via Ollama — free, no key
+The "real LLM" path runs at **zero cost on a local model** — no API key, no quota, no
+rate limits. On a 4GB-VRAM GPU (e.g. RTX 3050), `qwen3:4b` fits fully on-GPU and is strong
+at structured JSON.
+```bash
+# 1. install Ollama (https://ollama.com/download), then:
+ollama pull qwen3:4b            # ~2.5 GB
+ollama serve                    # or just run the Ollama app; serves on 127.0.0.1:11434
+# 2. run the pipeline — it auto-detects the local server:
+py src/pipeline.py              # audit log shows engine=ollama on the resolved cases
+```
+Provider is chosen by `LLM_PROVIDER` (`auto` default → Ollama if running, else Anthropic if
+keyed, else heuristic). Alternatives for a 4GB card: `OLLAMA_MODEL=phi4-mini` or `qwen3.5:2b`.
+**Any failure — no server, timeout, bad JSON — falls back to the heuristic**, so a keyless,
+server-less run (including CI) never breaks. The UI renders on the fast heuristic for
+responsiveness; the local-LLM path is shown via the CLI and appears in the persisted audit
+chain.
 
 ## UI (Streamlit)
 `app.py` is a thin, honest read-layer over the same engine — it runs `pipeline.run()`

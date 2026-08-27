@@ -43,7 +43,7 @@ def _pairing_stats(results, truth_ghosts):
 
 
 def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
-        source=None, audit_path=AUDIT_PATH) -> dict:
+        source=None, audit_path=AUDIT_PATH, provider=None) -> dict:
     """End-to-end reconciliation. PURE compute + an OPTIONAL commit to the audit log.
 
     dry_run : only high-confidence AUTO_RESOLVE may apply, and only when False (execute).
@@ -73,7 +73,8 @@ def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
     metrics_before = matcher.compute_metrics(results, truth)
     _, corr_before, esc_before = _pairing_stats(results, truth_ghosts)
 
-    handler_records = llm_handler.resolve_escalations(results, ledger, recon)
+    handler_records = llm_handler.resolve_escalations(results, ledger, recon,
+                                                      provider=provider)
     engine = handler_records[0]["engine"] if handler_records else "n/a"
     n_mis, corr_after, esc_after = _pairing_stats(results, truth_ghosts)
 

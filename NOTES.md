@@ -210,8 +210,14 @@ Triggered by Aryan pushing back that it felt too quick / not production-level. D
 - **`ARCHITECTURE.md`:** current-vs-target, honest scaling numbers, failure modes, "what we did NOT build and why".
 - **Tests 12 → 26**, all green. Framing locked: "production-grade core + costed path", never "production system".
 
+### ✅ Free LOCAL LLM via Ollama DONE (2026-08-27) — zero-cost "real AI" path
+- `LLM_PROVIDER` = auto(default)|ollama|anthropic|heuristic. auto = local Ollama if up → Anthropic if keyed → heuristic. Audit records the TRUE engine per case.
+- Default model `qwen3:4b` (~2.5GB, fits Aryan's 4GB RTX 3050 fully on-GPU). Alts: phi4-mini, qwen3.5:2b. `/api/chat` via `requests`, format:json + temp 0, same injection hardening. Any failure → heuristic (never hangs/crashes; CI stays keyless+green).
+- **Broke+fixed:** Windows dead-port TIMES OUT (doesn't refuse), and `localhost` (::1 first) made an absent-server probe ~4s → suite 0.8s→34s. Fixed: default host `127.0.0.1`, 0.4s cached probe, conftest forces heuristic for tests, test fixture uses tiny timeouts. Suite back to 1.7s / 29 green. UI renders on heuristic (fast); Ollama demo is the CLI (engine=ollama in the audit chain).
+- Aryan action: install Ollama, `ollama pull qwen3:4b`, run `py src/pipeline.py` → see engine=ollama. (Child-guide provided in chat.)
+
 ## 🟢 CURRENT STATE (updated 2026-08-27)
-**Days 1-8 + README + production-hardening pass complete. Working, tested, guarded, DOCKERIZED end-to-end system with a UI and an honest production-readiness story, all committed under Aryan's identity.** 26 passing tests. CI green-by-design (now also builds the Docker image). Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11, EXTRA_CREDIT precision 0.73→1.00 post-handler.
+**Days 1-8 + README + production-hardening + free-local-LLM (Ollama) complete. Working, tested, guarded, DOCKERIZED end-to-end system with a UI, a zero-cost local-AI path, and an honest production-readiness story, all committed under Aryan's identity.** 29 passing tests. CI green-by-design (also builds the Docker image; keyless heuristic is the CI default). Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11, EXTRA_CREDIT precision 0.73→1.00 post-handler.
 
 **Remaining before Sep 5 deadline:**
 - **Day 10: 5-min pitch video** — Aryan records. Lead with metrics, then show the escalation/guardrails live in the UI, then "what broke." Now also: show the SQLite toggle (same numbers from a real DB) + idempotency + the persistent audit chain — the production story.
