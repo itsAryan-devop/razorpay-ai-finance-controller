@@ -229,11 +229,14 @@ Triggered by Aryan pushing back that it felt too quick / not production-level. D
 ## 🟢 CURRENT STATE (updated 2026-08-27)
 **Days 1-8 + README + production-hardening + free-local-LLM (Ollama) complete. Working, tested, guarded, DOCKERIZED end-to-end system with a UI, a zero-cost local-AI path, and an honest production-readiness story, all committed under Aryan's identity.** 32 passing tests. CI green-by-design (also builds the Docker image; keyless heuristic is the CI default). Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11, EXTRA_CREDIT precision 0.73→1.00 post-handler.
 
-**Remaining before Sep 5 deadline:**
-- **Day 10: 5-min pitch video** — Aryan records. Lead with metrics, then show the escalation/guardrails live in the UI, then "what broke." Now also: show the SQLite toggle (same numbers from a real DB) + idempotency + the persistent audit chain — the production story.
-- **Day 11: submit the form** (https://forms.gle/d9r2gvxp8cmoZhon9).
-- Optional: start Docker Desktop + `docker compose up` to sanity-check the image locally (CI already builds it); add `ANTHROPIC_API_KEY` to validate the real-LLM path.
-- Iterative polish welcome (user said "don't rush to done").
+## 📋 REMAINING LAUNCH TASKS (engineering DONE; these are external/Aryan's call — do NOT start unilaterally)
+Deadline **5 Sep 2026**. Tracked in memory too ([[razorpay-remaining-tasks]]).
+1. **GitHub push** — public repo IS the submission; no remote created yet. External publish → only on Aryan's explicit go-ahead.
+2. **Hosted demo URL (optional, nice-to-have)** — best fit **Streamlit Community Cloud** (free, ~5 min, deploys FROM the GitHub repo → depends on #1). Alt: Cloud Run / Render / Railway (we have a Dockerfile). NOT Vercel/K8s (wrong tools for a Streamlit app + batch job; rationale in ARCHITECTURE.md §8).
+3. **5-min pitch video** — Aryan records. Lead with metrics; show escalation/guardrails live in the UI (SQLite toggle = same numbers from a real DB, idempotency, persistent audit chain); then the live-LLM over-confidence finding + verify-guard; then "what broke" (Docker socket crash, LLM hallucination) → recovery.
+4. **Application form** — submit (https://forms.gle/d9r2gvxp8cmoZhon9). Sort the Thapar academic/relocation question.
+
+_Optional dev niceties (not blockers): add `ANTHROPIC_API_KEY` to `.env` to also exercise the paid path; iterative UI polish._
 
 **Aryan action items when back:**
 1. (optional) add `ANTHROPIC_API_KEY` to `.env` + `py src/pipeline.py` to see the real-LLM path.
