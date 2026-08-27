@@ -21,6 +21,8 @@ jobs:
         run: python src/selftest_data.py
       - name: Run matcher (baseline metrics)
         run: python src/matcher.py
+      - name: Held-out generalization gate (rules must not be overfit to seed 42)
+        run: python src/eval_holdout.py
       - name: Run pipeline (handler on escalated residue, keyless heuristic)
         run: python src/pipeline.py
       - name: Re-run pipeline (idempotency: second execute applies nothing)
