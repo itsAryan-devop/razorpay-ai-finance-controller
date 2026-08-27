@@ -26,9 +26,19 @@ import generate_data  # noqa: E402
 import matcher        # noqa: E402
 import pipeline       # noqa: E402
 import audit          # noqa: E402
+import sources        # noqa: E402
 
 DATA = matcher.D
 LEDGER = os.path.join(DATA, "ledger.csv")
+
+
+def build_source(choice: str):
+    """Build the ingestion adapter from the sidebar choice. Same rows either way —
+    proves the storage seam (CSV fixture vs a real SQLite DB) is a swap, not a rewrite."""
+    if choice.startswith("SQLite"):
+        db = os.path.join(DATA, "recon.db")
+        return sources.SqliteSource.from_csv(sources.CsvSource(DATA), db), "SQLite DB"
+    return sources.CsvSource(DATA), "CSV fixture"
 
 
 def rupees(paise) -> str:
@@ -53,17 +63,28 @@ ensure_data()
 if "execute" not in st.session_state:
     st.session_state.execute = False
 
-# The engine is ~1ms; re-run it every render so the UI is always consistent with disk.
-result = pipeline.run(dry_run=not st.session_state.execute)
+# --- source selection FIRST (so the pipeline reads the chosen adapter this same run) ---
+with st.sidebar:
+    st.markdown("### AI Finance Controller")
+    st.caption("Razorpay AI Buildathon 2026 · Track 04 · settlement reconciliation")
+    st.markdown("#### Ingestion source")
+    choice = st.radio("Data source", ["CSV fixture", "SQLite DB"], key="data_source",
+                      help="Same rows, different adapter — the seam where a live merchant "
+                           "DB + Razorpay settlement feed plug in. Metrics are identical.")
+
+src_obj, src_label = build_source(choice)
+
+# Pure compute on every render (~1 ms); commit to the audit log only on deliberate
+# actions (the Apply button), never on a passive re-render.
+result = pipeline.run(dry_run=not st.session_state.execute, commit=False, source=src_obj)
 m = result["metrics"]
 results = result["results"]
 
 # ----------------------------------------------------------------------------- sidebar
 with st.sidebar:
-    st.markdown("### AI Finance Controller")
-    st.caption("Razorpay AI Buildathon 2026 · Track 04 · settlement reconciliation")
-
     llm_on = bool(os.getenv("ANTHROPIC_API_KEY"))
+    st.caption(f"Reading from **{src_label}** via "
+               f"`sources.{'SqliteSource' if src_label == 'SQLite DB' else 'CsvSource'}`.")
     st.markdown(
         f"**Handler engine:** {'LLM (Anthropic)' if llm_on else 'heuristic (keyless)'}  \n"
         f"**Dataset:** seed 42, synthetic  \n"
@@ -77,28 +98,50 @@ with st.sidebar:
 
     st.markdown("#### Execute gate")
     if st.session_state.execute:
-        st.warning("EXECUTE mode — high-confidence auto-resolutions are applied.")
+        st.warning("EXECUTE mode — auto-resolutions committed to the audit log.")
         if st.button("↩️ Reset to dry-run", use_container_width=True):
             st.session_state.execute = False
             st.rerun()
     else:
-        st.info("DRY-RUN (default) — nothing is applied; every decision is proposed.")
-        confirm = st.checkbox("I understand this applies auto-resolutions")
+        st.info("DRY-RUN (default) — nothing is committed; every decision is proposed.")
+        confirm = st.checkbox("I understand this commits high-confidence auto-resolutions")
         if st.button("▶️ Apply auto-resolutions", disabled=not confirm,
                      use_container_width=True):
+            committed = pipeline.run(dry_run=False, commit=True, cycle="ui",
+                                     source=src_obj)
             st.session_state.execute = True
+            st.session_state.flash = (
+                f"Committed {committed['applied']} auto-resolution(s) "
+                f"(run {committed['run_id']})"
+                + (f"; {committed['skipped']} already-applied skipped as idempotent."
+                   if committed['skipped'] else "."))
             st.rerun()
+
+    if st.button("🧹 Reset audit log", use_container_width=True):
+        pipeline.run(reset_audit=True, commit=False)
+        st.session_state.execute = False
+        st.session_state.flash = "Audit log cleared."
+        st.rerun()
     st.caption("Bounded & gated: only AUTO_RESOLVE (confidence ≥ 0.75) can apply, "
-               "and only in EXECUTE mode. FLAG / ESCALATE always wait for a human.")
+               "and only in EXECUTE mode. FLAG / ESCALATE always wait for a human. "
+               "Re-applying an already-committed decision is skipped (idempotent).")
 
 # ------------------------------------------------------------------------------- header
 mode = result["mode"]
 badge = "\U0001f7e2 DRY-RUN" if mode == "DRY-RUN" else "\U0001f534 EXECUTE"
+applied_committed = len(audit.applied_entities(result["audit"]["path"]))
 st.title("Settlement Reconciliation")
-st.markdown(
-    f"Mode **{badge}** — {result['applied']} applied, {result['held']} held for "
-    f"human review. The LLM *reads*; deterministic code does the math."
-)
+if st.session_state.get("flash"):
+    st.success(st.session_state.pop("flash"))
+if mode == "DRY-RUN":
+    st.markdown(
+        f"Mode **{badge}** — nothing committed; {len(result['records'])} escalated "
+        "decision(s) proposed. The LLM *reads*; deterministic code does the math.")
+else:
+    st.markdown(
+        f"Mode **{badge}** — {applied_committed} auto-resolution(s) committed to the "
+        f"audit log; {result['held']} held for a human. The LLM *reads*; deterministic "
+        "code does the math.")
 
 tab_dash, tab_queue, tab_audit = st.tabs(
     ["\U0001f4ca Dashboard", "\U0001f4cb Exception queue", "\U0001f512 Audit log"])
@@ -219,16 +262,18 @@ with tab_queue:
 
 # ========================================================================== AUDIT VIEWER
 with tab_audit:
-    st.markdown("#### Hash-chained audit log")
-    st.caption("Every money-affecting decision is appended to a tamper-evident, "
-               "SHA-256 hash-chained log. Editing any past entry breaks every "
-               "later link — there is a test that proves it.")
+    st.markdown("#### Hash-chained audit log (persistent, append-only)")
+    st.caption("Every committed decision is appended to a tamper-evident, SHA-256 "
+               "hash-chained log that PERSISTS across runs. Editing any past entry breaks "
+               "every later link — a test proves it. Re-applying a decision already "
+               "committed is skipped as idempotent, so re-running a cycle is safe.")
 
     a = result["audit"]
+    persisted = audit.records(a["path"])
     c1, c2, c3 = st.columns(3)
-    c1.metric("Entries", a["count"])
-    c2.metric("Mode", mode)
-    c3.metric("Applied / held", f"{result['applied']} / {result['held']}")
+    c1.metric("Chain entries", a["count"], help="Total committed entries across all runs.")
+    c2.metric("Applied (committed)", len(audit.applied_entities(a["path"])))
+    c3.metric("Integrity", "✅ OK" if a["ok"] else "❌ BROKEN")
 
     if st.button("\U0001f50e Verify chain integrity"):
         ok, count = audit.verify(a["path"])
@@ -238,23 +283,29 @@ with tab_audit:
         else:
             st.error(f"❌ BROKEN — chain diverges at entry {count}.")
 
-    arows = []
-    for i, entry in enumerate(a["rows"]):
-        rec = entry
-        arows.append({
-            "#": i,
-            "action": rec["action"],
-            "route": rec["route"],
-            "confidence": rec["confidence"],
-            "entity_id": rec["entity_id"],
-            "engine": rec["engine"],
-            "reason": rec["reason"],
-        })
-    if arows:
-        st.dataframe(pd.DataFrame(arows), use_container_width=True, hide_index=True,
+    if persisted:
+        prows = [{
+            "#": i, "run": r.get("run_id", ""), "cycle": r.get("cycle", ""),
+            "action": r.get("action"), "route": r.get("route"),
+            "confidence": r.get("confidence"), "entity_id": r.get("entity_id"),
+            "engine": r.get("engine"), "ts": r.get("ts", ""),
+        } for i, r in enumerate(persisted)]
+        st.dataframe(pd.DataFrame(prows), use_container_width=True, hide_index=True)
+    else:
+        st.info("Nothing committed yet — DRY-RUN commits nothing. Use the sidebar "
+                "**Apply auto-resolutions** (execute gate) to commit high-confidence "
+                "decisions, then watch the chain grow and re-verify.")
+
+    st.markdown("###### This run's gated decisions "
+                f"({'committed' if a['rows'] and result['committed'] else 'proposed, not committed'})")
+    if a["rows"]:
+        rows = [{"action": e["action"], "route": e["route"],
+                 "confidence": e["confidence"], "entity_id": e["entity_id"],
+                 "reason": e["reason"]} for e in a["rows"]]
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True,
                      column_config={"reason": st.column_config.TextColumn(width="large")})
     else:
-        st.write("No audit entries in this run.")
+        st.write("No escalated decisions in this run.")
 
     st.caption("Maps to RBI FREE-AI: Accountability and Understandable-by-Design "
                "(a replayable, non-repudiable trail), with humans retaining final "

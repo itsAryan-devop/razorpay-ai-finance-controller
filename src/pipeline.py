@@ -10,13 +10,17 @@ Run:  py src/pipeline.py            (heuristic fallback, no key needed)
       set ANTHROPIC_API_KEY in .env to run the real LLM path.
 """
 import csv
+import datetime as dt
 import os
 import sys
 import time
+import uuid
 
 import matcher
 import llm_handler
 import audit
+
+AUDIT_PATH = os.path.join(matcher.D, "audit_log.jsonl")
 
 
 def _true_ghosts():
@@ -36,11 +40,25 @@ def _pairing_stats(results, truth_ghosts):
     return len(mis), correct, escalated
 
 
-def run(dry_run=True) -> dict:
-    """End-to-end run returning EVERYTHING the CLI and the Streamlit UI need — one
-    source of truth. Side effect: rewrites data/generated/audit_log.jsonl (a fresh,
-    verifiable chain per run). Does not print; callers render."""
-    ledger, recon = matcher._load()
+def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
+        source=None, audit_path=AUDIT_PATH) -> dict:
+    """End-to-end reconciliation. PURE compute + an OPTIONAL commit to the audit log.
+
+    dry_run : only high-confidence AUTO_RESOLVE may apply, and only when False (execute).
+    commit  : when True, append this run's gated decisions to the persistent, append-only
+              hash-chained audit log. When False, compute the same decisions but write
+              nothing (the UI uses this on every render so the log reflects deliberate
+              runs, not re-renders).
+    reset_audit : truncate the chain first (a clean demo slate; off by default).
+    source  : a sources.ReconciliationSource. Defaults to the CSV generator output.
+
+    Idempotency: a decision whose entity was already committed as APPLIED in a prior run
+    is recorded as SKIPPED_IDEMPOTENT and NOT applied again — re-running a cycle is safe.
+    """
+    if source is None:
+        ledger, recon = matcher._load()
+    else:
+        ledger, recon = source.load_ledger(), source.load_settlements()
     truth = matcher._load_truth()
     truth_ghosts = _true_ghosts()
 
@@ -53,8 +71,8 @@ def run(dry_run=True) -> dict:
     metrics_before = matcher.compute_metrics(results, truth)
     _, corr_before, esc_before = _pairing_stats(results, truth_ghosts)
 
-    records = llm_handler.resolve_escalations(results, ledger, recon)
-    engine = records[0]["engine"] if records else "n/a"
+    handler_records = llm_handler.resolve_escalations(results, ledger, recon)
+    engine = handler_records[0]["engine"] if handler_records else "n/a"
     n_mis, corr_after, esc_after = _pairing_stats(results, truth_ghosts)
 
     # Post-handler, credits the handler paired to an order are no longer "unexplained
@@ -65,27 +83,37 @@ def run(dry_run=True) -> dict:
         results, truth, resolved_credits)
     ec_reclassified = metrics_before["extra_credit_predicted"] - ec_pred_after
 
-    # ---- GUARDRAILS: gate every decision, then write a tamper-evident audit entry ----
-    # BOUNDED/GATED: only high-confidence AUTO_RESOLVE may be auto-applied, and only
-    # when --execute is passed. FLAG/ESCALATE always wait for a human. Dry-run is default.
+    # ---- GUARDRAILS: gate every decision, then (optionally) commit a tamper-evident entry.
+    # BOUNDED/GATED: only high-confidence AUTO_RESOLVE may auto-apply, and only in EXECUTE.
+    # FLAG/ESCALATE always wait for a human. Dry-run is the default.
     mode = "EXECUTE" if not dry_run else "DRY-RUN"
-    path = os.path.join(matcher.D, "audit_log.jsonl")
-    if os.path.exists(path):
-        os.remove(path)                       # fresh, verifiable chain per demo run
-    applied = 0
+    if reset_audit and os.path.exists(audit_path):
+        os.remove(audit_path)
+    already_applied = audit.applied_entities(audit_path)   # from prior committed runs
+    run_id = uuid.uuid4().hex[:8]
+    stamp = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+
+    applied = skipped = 0
     audit_rows = []
-    for rec in records:
-        can_apply = (not dry_run) and rec["route"] == "AUTO_RESOLVE"
-        action = "APPLIED" if can_apply else "PROPOSED"
-        applied += can_apply
-        entry = {**rec, "action": action, "mode": mode}
-        audit.append(path, entry)
+    for rec in handler_records:
+        want_apply = (not dry_run) and rec["route"] == "AUTO_RESOLVE"
+        if want_apply and rec["entity_id"] in already_applied:
+            action, skipped = "SKIPPED_IDEMPOTENT", skipped + 1   # already applied earlier
+        elif want_apply:
+            action, applied = "APPLIED", applied + 1
+        else:
+            action = "PROPOSED"                                    # held for a human
+        entry = {**rec, "action": action, "mode": mode,
+                 "cycle": cycle, "run_id": run_id, "ts": stamp}
         audit_rows.append(entry)
-    ok, count = audit.verify(path)
+        if commit:
+            audit.append(audit_path, entry)
+
+    ok, count = audit.verify(audit_path)   # whole persisted chain (0 if none committed yet)
 
     return {
         "results": results,
-        "records": records,
+        "records": handler_records,
         "engine": engine,
         "metrics": metrics_before,
         "pairing": {"total": n_mis, "before": corr_before, "after": corr_after,
@@ -97,14 +125,18 @@ def run(dry_run=True) -> dict:
         "n_records": n_records,
         "elapsed": elapsed,
         "mode": mode,
+        "cycle": cycle,
+        "run_id": run_id,
+        "committed": commit,
         "applied": applied,
-        "held": len(records) - applied,
-        "audit": {"path": path, "ok": ok, "count": count, "rows": audit_rows},
+        "skipped": skipped,
+        "held": len(handler_records) - applied - skipped,
+        "audit": {"path": audit_path, "ok": ok, "count": count, "rows": audit_rows},
     }
 
 
-def main(dry_run=True):
-    r = run(dry_run=dry_run)
+def main(dry_run=True, cycle="adhoc", reset_audit=False):
+    r = run(dry_run=dry_run, cycle=cycle, commit=True, reset_audit=reset_audit)
     p = r["pairing"]
     print(f"BEFORE handler (deterministic): {p['before']}/{p['total']} misattributions "
           f"paired correctly, {p['escalated_before']} escalated")
@@ -113,8 +145,10 @@ def main(dry_run=True):
     print(f"throughput: {r['throughput']:.0f} records/s ({r['n_records']} records "
           f"in {r['elapsed']*1000:.0f} ms)")
 
-    print(f"\n[{r['mode']}] {r['applied']} applied, {r['held']} held for human review")
-    print(f"audit chain: {r['audit']['count']} entries, "
+    extra = f", {r['skipped']} skipped (idempotent)" if r["skipped"] else ""
+    print(f"\n[{r['mode']}] cycle={r['cycle']} run={r['run_id']} — "
+          f"{r['applied']} applied, {r['held']} held for human review{extra}")
+    print(f"audit chain: {r['audit']['count']} entries (persistent), "
           f"integrity {'OK' if r['audit']['ok'] else 'BROKEN'} "
           f"(data/generated/audit_log.jsonl)")
     for rec in r["records"]:
@@ -123,4 +157,10 @@ def main(dry_run=True):
 
 
 if __name__ == "__main__":
-    main(dry_run="--execute" not in sys.argv)
+    args = sys.argv[1:]
+    cycle_arg = "adhoc"
+    if "--cycle" in args:
+        cycle_arg = args[args.index("--cycle") + 1]
+    main(dry_run="--execute" not in args,
+         cycle=cycle_arg,
+         reset_audit="--reset-audit" in args)

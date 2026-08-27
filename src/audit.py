@@ -56,3 +56,22 @@ def verify(path: str) -> tuple[bool, int]:
             prev = entry["hash"]
             n += 1
     return True, n
+
+
+def records(path: str) -> list[dict]:
+    """Return every logged record (the inner payloads) in chain order."""
+    if not os.path.exists(path):
+        return []
+    out = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                out.append(json.loads(line)["record"])
+    return out
+
+
+def applied_entities(path: str) -> set:
+    """entity_ids already committed with action APPLIED — the idempotency key set.
+    A second run that would re-apply the same decision is a no-op (see pipeline)."""
+    return {r.get("entity_id") for r in records(path) if r.get("action") == "APPLIED"}
