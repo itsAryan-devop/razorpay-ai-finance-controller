@@ -39,8 +39,11 @@ pairing proposed but sent for a human glance rather than auto-applied). Every de
 logged with engine, confidence, and a human-readable justification to `audit_log.jsonl`.
 
 Resolving these pairings also reclaims the 3 credits that leaked into EXTRA_CREDIT in Stage 1
-(they belong to the now-paired orders), lifting EXTRA_CREDIT precision toward 1.00. *(Full
-re-scoring after handler is a Day-7 polish.)*
+(they belong to the now-paired orders): **EXTRA_CREDIT precision 0.73 → 1.00** once the
+handler pairs them to their order (8/11 → 8/8 truly-orphan). The pipeline computes this
+before/after automatically (`pipeline.run()` → `extra_credit_after`), and it is shown live on
+the dashboard. Note 2 of the 3 reclaimed credits come from FLAG decisions (correct pairing,
+held for human confirmation), so the lift is "proposed", consistent with the gate.
 
 ## Why the numbers are not 100% — and why that is the point
 The structural exceptions are fully resolvable by rules, so they score 1.00 (expected, not

@@ -66,9 +66,23 @@ py src/matcher.py            # deterministic baseline + per-class metrics + exce
 py src/pipeline.py           # end-to-end: matcher → handler → before/after + audit log
 py src/pipeline.py --execute # apply high-confidence auto-resolutions (gated)
 pytest -q                    # 12 tests
+streamlit run app.py         # dashboard + exception queue + audit viewer
 ```
 The LLM path activates when `ANTHROPIC_API_KEY` is set in `.env`; otherwise a transparent
 text-similarity heuristic runs so the pipeline and CI work with no key.
+
+## UI (Streamlit)
+`app.py` is a thin, honest read-layer over the same engine — it runs `pipeline.run()`
+**in-process on every render**, so every number on screen is recomputed live, never
+hardcoded. Three views:
+- **Dashboard** — headline metrics (accuracy, match rate, misattribution pairing before→after,
+  throughput), the exception mix, per-class precision/recall, and the EXTRA_CREDIT queue
+  precision lift (0.73 → 1.00 after the handler pairs the colliding credits).
+- **Exception queue** — the typed queue, filterable by type and route, plus the
+  escalated→handler decisions with their confidence and justification.
+- **Audit log** — the hash-chained entries with a live **"Verify chain integrity"** button
+  that recomputes the SHA-256 chain, and the dry-run/execute gate exposed as a guarded button
+  (only high-confidence AUTO_RESOLVE applies, behind an explicit confirm).
 
 Data is synthetic because **real Razorpay test-mode settlements never populate** (test mode
 is the pre-KYC state — verified by a day-1 spike, see [LOG.md](LOG.md)). The generator is
@@ -109,8 +123,9 @@ src/generate_data.py   synthetic data + ground-truth answer key (seed 42)
 src/selftest_data.py   9 data-integrity invariants
 src/matcher.py         deterministic 3-pass matcher + typed exception queue
 src/llm_handler.py     LLM/heuristic resolver for the escalated residue
-src/pipeline.py        end-to-end run + guardrails + audit log
+src/pipeline.py        end-to-end run (run()/main) + guardrails + audit log
 src/audit.py           append-only hash-chained audit log
+app.py                 Streamlit UI: dashboard · exception queue · audit viewer
 tests/                 12 pytest cases (run in CI on every push)
 NOTES.md PLAN.md LOG.md RESULTS.md   context, roadmap, failure trail, metrics
 research/              the 4 research reports the design is grounded in

@@ -4,5 +4,4 @@ requests>=2.32.0
 pandas>=2.2.0
 pytest>=8.0.0
 anthropic>=0.39.0
-# Added later as phases land:
-# streamlit>=1.39.0
+streamlit>=1.39.0

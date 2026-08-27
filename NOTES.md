@@ -194,13 +194,19 @@ Track 04 locked. Scaffold created: `PLAN.md` (roadmap + architecture mindmap), `
 ### ✅ Day 9 (README) DONE EARLY — the portfolio artifact
 Full README.md written: honest metrics up top, architecture diagram, how-to-run, guardrails + RBI FREE-AI mapping, "what broke" pointer, honest limits, repo layout.
 
-## 🟢 CURRENT STATE (end of autonomous session, 2026-08-25)
-**Days 1-7 + README complete. Working, tested, guarded end-to-end system, all committed under Aryan's identity.** 7 commits. 12 passing tests. CI green-by-design. Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11.
+### ✅ Day 8 DONE (2026-08-27) — Streamlit UI + closed EXTRA_CREDIT loose end
+- `app.py`: 3 tabs (Dashboard / Exception queue / Audit log). Runs `pipeline.run()` in-process on every render, so on-screen numbers are recomputed live, never hardcoded. Guarded execute gate (confirm checkbox → applies only conf-≥0.75 AUTO_RESOLVE) + live "Verify chain integrity" button.
+- Refactor that enabled it: `pipeline.run(dry_run)->dict` (was print-only) + `matcher.compute_metrics()` as the single numbers source (`score()` now prints from it). Behaviour-preserving; 12 tests still green.
+- **Closed the loose end RESULTS.md flagged:** EXTRA_CREDIT precision post-handler **0.73 → 1.00** (colliding credits paired to their order are no longer "unexplained money"). Computed in `pipeline.run()`, shown live, RESULTS.md updated to the real number (2 of 3 are FLAG = proposed/human-confirm).
+- Verified in a real browser: all tabs render, integrity check passes, `--execute` applies 1 / holds 2. `streamlit>=1.39.0` added; `.claude/launch.json` for reproducible launch (port 8501).
+
+## 🟢 CURRENT STATE (updated 2026-08-27)
+**Days 1-8 + README complete. Working, tested, guarded end-to-end system WITH a UI, all committed under Aryan's identity.** 12 passing tests. CI green-by-design. Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11, EXTRA_CREDIT precision 0.73→1.00 post-handler.
 
 **Remaining before Sep 5 deadline:**
-- **Day 8: Streamlit UI** (recon dashboard + exception queue + audit viewer) — left for when Aryan is back; it's visual/iterative and best reviewed live. Adds `streamlit` dep. NEXT BUILD.
-- **Day 10: 5-min pitch video** — Aryan records. Lead with metrics, then show the escalation/guardrails, then "what broke."
+- **Day 10: 5-min pitch video** — Aryan records. Lead with metrics, then show the escalation/guardrails live in the UI, then "what broke."
 - **Day 11: submit the form** (https://forms.gle/d9r2gvxp8cmoZhon9).
+- Iterative polish welcome (user said "don't rush to done") — the UI is the natural place to keep refining.
 
 **Aryan action items when back:**
 1. (optional) add `ANTHROPIC_API_KEY` to `.env` + `py src/pipeline.py` to see the real-LLM path.
@@ -215,4 +221,4 @@ A friend is also applying, on **T2 Risk Manager** — abuse-ring/RTO detection f
 **Implication:** reinforces T4 over T2 (avoid near-duplicate submission from the same account pool). Reinforces urgency — he's already at "working evaluated model," we're still choosing a track. **Steal the transferable principle: causal/as-of feature computation applies directly to T4's reconciliation matcher too — must not leak future settlement data into features.** Adopt his freeze-then-polish pacing: stop coding with ~5-6 days of buffer left for README/video.
 
 ---
-*Last updated: 2026-08-25*
+*Last updated: 2026-08-27*

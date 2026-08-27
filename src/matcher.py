@@ -186,43 +186,79 @@ def _load_truth():
         return {t["payment_id"]: t["label"] for t in csv.DictReader(f)}
 
 
-def score(results: list[Result], truth: dict[str, str]):
+def extra_credit_precision(results, truth, resolved_credits=None):
+    """Precision of the EXTRA_CREDIT queue = fraction of rows flagged as unexplained
+    money that are TRULY orphan credits. `resolved_credits` (credit ids a downstream
+    handler has since paired to an order) are excluded — they are no longer unexplained.
+    Returns (precision, true_positives, predicted_count)."""
+    resolved_credits = resolved_credits or set()
+    predicted = [r for r in results
+                 if r.label == "EXTRA_CREDIT" and r.entity_id not in resolved_credits]
+    tp = sum(1 for r in predicted if truth.get(r.entity_id) == "EXTRA_CREDIT")
+    prec = tp / len(predicted) if predicted else 1.0
+    return prec, tp, len(predicted)
+
+
+def compute_metrics(results: list[Result], truth: dict[str, str]) -> dict:
+    """Structured metrics (single source of truth for the numbers in RESULTS.md /
+    README / the Streamlit dashboard). score() below just prints this."""
+    from collections import Counter
     pred = {r.entity_id: r.label for r in results}
     keys = set(truth) | set(pred)
 
-    # per-class precision/recall
-    print(f"{'label':<22}{'prec':>7}{'recall':>8}{'support':>9}")
+    per_class = {}
     macro_p = macro_r = 0.0
     for L in EXCEPTION_LABELS:
         tp = sum(1 for k in keys if truth.get(k) == L and pred.get(k) == L)
         fp = sum(1 for k in keys if pred.get(k) == L and truth.get(k) != L)
         fn = sum(1 for k in keys if truth.get(k) == L and pred.get(k) != L)
-        support = tp + fn
         p = tp / (tp + fp) if (tp + fp) else 1.0
         r = tp / (tp + fn) if (tp + fn) else 1.0
+        per_class[L] = {"precision": p, "recall": r, "support": tp + fn}
         macro_p += p
         macro_r += r
-        print(f"{L:<22}{p:>7.2f}{r:>8.2f}{support:>9}")
     n = len(EXCEPTION_LABELS)
-    print(f"{'MACRO AVG':<22}{macro_p/n:>7.2f}{macro_r/n:>8.2f}")
 
     correct = sum(1 for k in keys if truth.get(k) == pred.get(k))
-    acc = correct / len(keys)
-    # reconciliation match rate: ledger orders tied to a settlement (not missing)
     ledger_keys = [k for k in truth if truth[k] != "EXTRA_CREDIT"]
     matched = sum(1 for k in ledger_keys if pred.get(k) not in (None, "MISSING_CREDIT"))
-    print(f"\nclassification accuracy : {acc:.3f}  ({correct}/{len(keys)})")
-    print(f"reconciliation match rate: {matched/len(ledger_keys):.3f}  "
-          f"({matched}/{len(ledger_keys)} ledger orders tied to a settlement)")
+    ec_prec, ec_tp, ec_pred = extra_credit_precision(results, truth)
 
-    from collections import Counter
-    routes = Counter(r.route for r in results)
-    print("routing: " + "  ".join(f"{k}={v}" for k, v in sorted(routes.items())))
+    return {
+        "per_class": per_class,
+        "macro_precision": macro_p / n,
+        "macro_recall": macro_r / n,
+        "accuracy": correct / len(keys),
+        "correct": correct,
+        "total": len(keys),
+        "match_rate": matched / len(ledger_keys),
+        "matched": matched,
+        "ledger_total": len(ledger_keys),
+        "routing": dict(Counter(r.route for r in results)),
+        "extra_credit_precision": ec_prec,
+        "extra_credit_tp": ec_tp,
+        "extra_credit_predicted": ec_pred,
+        "misclassified": [(k, truth.get(k), pred.get(k))
+                          for k in keys if truth.get(k) != pred.get(k)],
+    }
 
-    # confusion (only mismatches)
-    mism = [(k, truth.get(k), pred.get(k)) for k in keys if truth.get(k) != pred.get(k)]
-    print(f"misclassified: {len(mism)}")
-    for k, t, p in mism[:12]:
+
+def score(results: list[Result], truth: dict[str, str]):
+    m = compute_metrics(results, truth)
+
+    print(f"{'label':<22}{'prec':>7}{'recall':>8}{'support':>9}")
+    for L in EXCEPTION_LABELS:
+        c = m["per_class"][L]
+        print(f"{L:<22}{c['precision']:>7.2f}{c['recall']:>8.2f}{c['support']:>9}")
+    print(f"{'MACRO AVG':<22}{m['macro_precision']:>7.2f}{m['macro_recall']:>8.2f}")
+
+    print(f"\nclassification accuracy : {m['accuracy']:.3f}  ({m['correct']}/{m['total']})")
+    print(f"reconciliation match rate: {m['match_rate']:.3f}  "
+          f"({m['matched']}/{m['ledger_total']} ledger orders tied to a settlement)")
+
+    print("routing: " + "  ".join(f"{k}={v}" for k, v in sorted(m["routing"].items())))
+    print(f"misclassified: {len(m['misclassified'])}")
+    for k, t, p in m["misclassified"][:12]:
         print(f"   {k}: truth={t} pred={p}")
 
 
