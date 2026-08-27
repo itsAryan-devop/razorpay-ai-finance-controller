@@ -216,6 +216,10 @@ Triggered by Aryan pushing back that it felt too quick / not production-level. D
 - **Broke+fixed:** Windows dead-port TIMES OUT (doesn't refuse), and `localhost` (::1 first) made an absent-server probe ~4s → suite 0.8s→34s. Fixed: default host `127.0.0.1`, 0.4s cached probe, conftest forces heuristic for tests, test fixture uses tiny timeouts. Suite back to 1.7s / 29 green. UI renders on heuristic (fast); Ollama demo is the CLI (engine=ollama in the audit chain).
 - Aryan action: install Ollama, `ollama pull qwen3:4b`, run `py src/pipeline.py` → see engine=ollama. (Child-guide provided in chat.)
 
+### ✅ Docker validated locally end-to-end (2026-08-28)
+- `docker compose up -d --build` → in-build selftest ALL PASS, container up, `localhost:8501` HTTP 200 / health ok (keyless, LLM_PROVIDER=heuristic). Batch in container: `--execute` → 1 applied/2 held/chain OK; re-run → 0 applied/1 skipped (idempotent across container runs via the recon-data volume). Torn down clean; image 822MB retained.
+- **Recovery story for the pitch:** Docker Desktop was crashing on an orphaned AF_UNIX socket no Windows tool could delete; fixed by deleting it from WSL. Pure environment issue, project untouched. (Full detail in LOG.md.)
+
 ## 🟢 CURRENT STATE (updated 2026-08-27)
 **Days 1-8 + README + production-hardening + free-local-LLM (Ollama) complete. Working, tested, guarded, DOCKERIZED end-to-end system with a UI, a zero-cost local-AI path, and an honest production-readiness story, all committed under Aryan's identity.** 29 passing tests. CI green-by-design (also builds the Docker image; keyless heuristic is the CI default). Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11, EXTRA_CREDIT precision 0.73→1.00 post-handler.
 
