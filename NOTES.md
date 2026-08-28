@@ -71,7 +71,7 @@ Two streams, run one at a time so each gets real depth:
 
 **Python + LangGraph (or Claude Agent SDK) + `razorpay-mcp-server` as tool layer + pandas/sklearn for the ML-heavy parts (fraud track).**
 
-Why: Aryan is strong in Python + ML/math libraries already — no learning-curve tax with 12 days on the clock. Razorpay's own "sanctioned" stacks are Go (systems/MCP server) and LangGraph/Claude Agent SDK (their actual production agents — Viveka, Agent Studio) — both are first-class in Python, so we get the credibility without a Go detour. `razorpay-mcp-server` is a Go *binary* we run locally and talk to over MCP — no Go code required from us.
+Why: Aryan is strong in Python + ML/math libraries already — no learning-curve tax with 12 days on the clock. Razorpay's own "sanctioned" stacks are Go (systems/MCP server) and LangGraph/Claude Agent SDK (their actual production agents — LangGraph for Project Viveka specifically, Claude Agent SDK for Agent Studio specifically — corrected/verified 2026-08-28, see [research/05](research/05-competitive-refresh-2026-08-28.md)) — both are first-class in Python, so we get the credibility without a Go detour. `razorpay-mcp-server` is a Go *binary* we run locally and talk to over MCP — no Go code required from us.
 Aryan's approach: study/deepen understanding of chosen stack *while* building and after — not a blocker to starting. Confirmed he can defend any technical choice on demand (agreed: post-build I'll interview him like the panel would).
 
 ## 6. Research Findings Log
@@ -226,8 +226,17 @@ Triggered by Aryan pushing back that it felt too quick / not production-level. D
 - `docker compose up -d --build` → in-build selftest ALL PASS, container up, `localhost:8501` HTTP 200 / health ok (keyless, LLM_PROVIDER=heuristic). Batch in container: `--execute` → 1 applied/2 held/chain OK; re-run → 0 applied/1 skipped (idempotent across container runs via the recon-data volume). Torn down clean; image 822MB retained.
 - **Recovery story for the pitch:** Docker Desktop was crashing on an orphaned AF_UNIX socket no Windows tool could delete; fixed by deleting it from WSL. Pure environment issue, project untouched. (Full detail in LOG.md.)
 
-## 🟢 CURRENT STATE (updated 2026-08-27)
-**Days 1-8 + README + production-hardening + free-local-LLM (Ollama) complete. Working, tested, guarded, DOCKERIZED end-to-end system with a UI, a zero-cost local-AI path, and an honest production-readiness story, all committed under Aryan's identity.** 32 passing tests. CI green-by-design (also builds the Docker image; keyless heuristic is the CI default). Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11, EXTRA_CREDIT precision 0.73→1.00 post-handler.
+### ✅ Competitive research sprint DONE (2026-08-28) — 3 parallel agents, real citations, no hallucination
+Full report: [research/05-competitive-refresh-2026-08-28.md](research/05-competitive-refresh-2026-08-28.md). Headline: **the architecture is not the weak point** — it matches the emerging 2026 hybrid-deterministic pattern independently converged on by Razorpay's own Bumblebee, a same-buildathon sibling submission (RiskPulse, Track 02), and cited industry write-ups. Concrete actions taken:
+- **⭐ Found the exact Track 04 rubric quote** on the live buildathon page: *"Throughput plus measured accuracy plus an honest exception list. One cherry-picked match proves nothing."* — quoted verbatim in README now, directly validating our held-out 5-seed eval + typed exception queue.
+- **Added `tests/test_adversarial.py`** (7 tests) — the #1 flagged gap: no systematic attack test on the verify-guard, only "we saw one bug and patched it." Now covers injection-stripping, length-bombs, JSON-breakout resistance, the guard catching a mocked "compromised" model end-to-end (reproduces the live qwen3:4b bug), tied-narration-collision-escalates-not-guesses, AND one test that **honestly documents a real remaining limitation** (the guard checks textual grounding, not narration *authenticity* — a forged narration would still fool it; assumption: narration is bank-generated, matching Razorpay's real server-generated `description` field). 39 tests total now.
+- **Correction:** Project Viveka is LangGraph (not Claude Agent SDK as our stack note loosely implied); it's an oncall/RCA agent specifically, not generic "shadow mode." Its "~80% target, still shadow mode" claim (from a ZenML mirror) could not be re-confirmed from the primary blog — flagged unverified, not repeated in our public README.
+- **No public Track 04 rival found** despite hard searching (good news, not a reason to relax). Found RiskPulse (Track 02, same buildathon) as a real sibling submission with comparable rigor (PR-AUC 0.9699, PostgreSQL audit trail, "the LLM does not control financial decisions") — a useful bar, not a direct rival.
+- **Added a differentiation note**: Agent Studio's Settlement Insights (WhatsApp settlement summaries, launched Mar 2026) is finance-ops-adjacent but doesn't reconcile a ledger or resolve exceptions — we're complementary, not duplicating shipped Razorpay functionality.
+- **Deliberately did NOT add**: LLM observability tooling (Langfuse/LangSmith) or a formal eval framework (DeepEval/RAGAS) — researched, explicitly recommended against for a solo hackathon this close to deadline; our structured JSON logs + held-out CI gate are reasoned substitutes. Documented as deliberate non-priorities, not oversights.
+
+## 🟢 CURRENT STATE (updated 2026-08-28)
+**Days 1-8 + README + production-hardening + free-local-LLM (Ollama) + competitive research sprint complete. Working, tested, guarded, DOCKERIZED, adversarially-tested end-to-end system with a UI, a zero-cost local-AI path, an honest production-readiness story, and a researched competitive position — all committed under Aryan's identity.** 39 passing tests. CI green-by-design (also builds the Docker image; keyless heuristic is the CI default). Honest headline: accuracy 0.976, match rate 0.911, misattribution pairing 8/11→11/11, EXTRA_CREDIT precision 0.73→1.00 post-handler.
 
 ## 📋 REMAINING LAUNCH TASKS (engineering DONE; these are external/Aryan's call — do NOT start unilaterally)
 Deadline **5 Sep 2026**. Tracked in memory too ([[razorpay-remaining-tasks]]).
@@ -251,4 +260,4 @@ A friend is also applying, on **T2 Risk Manager** — abuse-ring/RTO detection f
 **Implication:** reinforces T4 over T2 (avoid near-duplicate submission from the same account pool). Reinforces urgency — he's already at "working evaluated model," we're still choosing a track. **Steal the transferable principle: causal/as-of feature computation applies directly to T4's reconciliation matcher too — must not leak future settlement data into features.** Adopt his freeze-then-polish pacing: stop coding with ~5-6 days of buffer left for README/video.
 
 ---
-*Last updated: 2026-08-27*
+*Last updated: 2026-08-28*
