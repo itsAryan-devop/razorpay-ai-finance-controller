@@ -31,6 +31,14 @@ FLAG_CONF = 0.45      # >= -> FLAG, else stay ESCALATE
 # Anthropic (optional, paid)
 MODEL = os.getenv("LLM_MODEL", "claude-haiku-4-5-20251001")
 
+# Approximate published per-token pricing (USD per 1K tokens) for cost-per-decision
+# reporting — a real judging criterion (task completion / cost-per-run / latency /
+# hallucination rate). ENV-overridable and labelled "approximate": verify against
+# https://www.anthropic.com/pricing before treating as exact billing truth. Ollama and
+# the heuristic are genuinely free (local compute / no model call) — $0.00, not estimated.
+ANTHROPIC_COST_PER_1K_INPUT = float(os.getenv("ANTHROPIC_COST_PER_1K_INPUT", "0.001"))
+ANTHROPIC_COST_PER_1K_OUTPUT = float(os.getenv("ANTHROPIC_COST_PER_1K_OUTPUT", "0.005"))
+
 # Ollama (optional, FREE + LOCAL). Default qwen3:4b — at ~2.5GB it fits FULLY on a
 # 4GB-VRAM RTX 3050 (no CPU offload) and Qwen is strong at structured JSON. Do NOT
 # default to a 7B (spills to CPU on a 4GB card) or llama3.2:3b (weak JSON reliability).
@@ -141,10 +149,13 @@ def _ollama_available(host: str = None) -> bool:
     return ok
 
 
-def _ollama_choose(code, customer, amount, candidates):
+def _ollama_choose(code, customer, amount, candidates, trace_out=None):
     """Ask a local Ollama model to pick the right credit + justify. Returns a tuple,
     or None on ANY failure (no server, timeout, bad JSON) so the caller falls back to
-    the heuristic. Uses structured output (format=json) + temperature 0 for determinism."""
+    the heuristic. Uses structured output (format=json) + temperature 0 for determinism.
+
+    trace_out (optional dict, mutated in place): captures latency/tokens/raw-response
+    for the decision-trace viewer and cost reporting — local inference is always $0."""
     prompt = _build_prompt(code, customer, amount, candidates)
     body = {
         "model": OLLAMA_MODEL,
@@ -156,6 +167,7 @@ def _ollama_choose(code, customer, amount, candidates):
         # answering — we only need a narration match, so disable it (measured 42s -> 3s).
         "think": False,
     }
+    t0 = time.perf_counter()
     try:
         import requests
         try:
@@ -167,9 +179,25 @@ def _ollama_choose(code, customer, amount, candidates):
             resp = requests.post(f"{OLLAMA_HOST}/api/chat", json=body,
                                  timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT))
             resp.raise_for_status()
-        content = resp.json()["message"]["content"]
+        payload = resp.json()
+        content = payload["message"]["content"]
+        if trace_out is not None:
+            trace_out.update({
+                "prompt": prompt, "raw_response": content,
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+                "tokens_in": payload.get("prompt_eval_count"),
+                "tokens_out": payload.get("eval_count"),
+                "cost_usd": 0.0, "cost_note": "local inference — free", "error": None,
+            })
         return _parse_choice(content)
-    except Exception:
+    except Exception as e:
+        if trace_out is not None:
+            trace_out.update({
+                "prompt": prompt, "raw_response": None,
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+                "tokens_in": None, "tokens_out": None,
+                "cost_usd": 0.0, "cost_note": "local inference — free", "error": repr(e),
+            })
         return None                                # any failure -> heuristic fallback
 
 
@@ -184,20 +212,46 @@ def _anthropic_ready() -> bool:
         return False
 
 
-def _llm_choose(code, customer, amount, candidates):
+def _llm_choose(code, customer, amount, candidates, trace_out=None):
     """Ask the Anthropic model to pick the right credit + justify. Returns a tuple or
-    None on failure (so the caller falls back to the heuristic)."""
+    None on failure (so the caller falls back to the heuristic).
+
+    trace_out (optional dict, mutated in place): captures latency/tokens/raw-response
+    + an approximate USD cost estimate for the decision-trace viewer and cost reporting."""
     if not _anthropic_ready():
         return None
     from anthropic import Anthropic
     prompt = _build_prompt(code, customer, amount, candidates)
+    t0 = time.perf_counter()
     try:
         client = Anthropic()
         msg = client.messages.create(model=MODEL, max_tokens=200,
                                       messages=[{"role": "user", "content": prompt}])
         text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+        if trace_out is not None:
+            tin = tout = cost = None
+            try:
+                tin, tout = msg.usage.input_tokens, msg.usage.output_tokens
+                cost = round(tin / 1000 * ANTHROPIC_COST_PER_1K_INPUT
+                             + tout / 1000 * ANTHROPIC_COST_PER_1K_OUTPUT, 6)
+            except Exception:
+                pass
+            trace_out.update({
+                "prompt": prompt, "raw_response": text,
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+                "tokens_in": tin, "tokens_out": tout,
+                "cost_usd": cost, "cost_note": "approximate — see ANTHROPIC_COST_PER_1K_*",
+                "error": None,
+            })
         return _parse_choice(text)
-    except Exception:
+    except Exception as e:
+        if trace_out is not None:
+            trace_out.update({
+                "prompt": prompt, "raw_response": None,
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+                "tokens_in": None, "tokens_out": None,
+                "cost_usd": None, "cost_note": "call failed", "error": repr(e),
+            })
         return None
 
 
@@ -245,11 +299,14 @@ def resolve_escalations(results, ledger, recon, use_llm=None, provider=None):
                       for cid in cand_ids]
         amount = r.evidence.get("amount", 0)
 
-        out, engine = None, active
+        out, engine, trace = None, active, {}
+        model_attempted = active in ("ollama", "anthropic")
         if active == "ollama":
-            out = _ollama_choose(code, "", amount, candidates)
+            out = _ollama_choose(code, "", amount, candidates, trace_out=trace)
         elif active == "anthropic":
-            out = _llm_choose(code, "", amount, candidates)
+            out = _llm_choose(code, "", amount, candidates, trace_out=trace)
+        model_raw_pick = out[0] if out is not None else None      # pre-guard, for the
+                                                                    # hallucination-rate metric
 
         # Deterministic guard on the model's proposal: "the LLM reads, code VERIFIES."
         # The chosen credit must have actual narration support for this order's code — an
@@ -264,7 +321,14 @@ def resolve_escalations(results, ledger, recon, use_llm=None, provider=None):
         if out is None:                     # provider unused/failed, or its pick was rejected
             engine = (f"heuristic (after {active} pick rejected)" if rejected_pick
                       else "heuristic")
+            t0 = time.perf_counter()
             out = _heuristic_choose(code, candidates)
+            if not trace:                   # provider was never attempted (heuristic-only run)
+                trace = {"prompt": None, "raw_response": None,
+                         "latency_ms": round((time.perf_counter() - t0) * 1000, 3),
+                         "tokens_in": None, "tokens_out": None, "cost_usd": 0.0,
+                         "cost_note": "deterministic text-similarity — no model call",
+                         "error": None}
         chosen, conf, why = out
 
         route = ("AUTO_RESOLVE" if conf >= AUTO_CONF
@@ -272,6 +336,10 @@ def resolve_escalations(results, ledger, recon, use_llm=None, provider=None):
         r.matched_entity = chosen if route != "ESCALATE" else ""
         r.route = route
         r.reason = f"[{engine}] {why}"
-        records.append({"entity_id": r.entity_id, "engine": engine, "chosen": chosen,
-                        "confidence": round(conf, 3), "route": route, "reason": why})
+        records.append({
+            "entity_id": r.entity_id, "engine": engine, "chosen": chosen,
+            "confidence": round(conf, 3), "route": route, "reason": why,
+            "model_attempted": model_attempted, "model_raw_pick": model_raw_pick,
+            "guard_rejected": rejected_pick, "trace": trace,
+        })
     return records

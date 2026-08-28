@@ -84,6 +84,30 @@ which is the property a reconciler needs; a pure-LLM agent's pass^k collapses as
 (≈0.75 per trial → ≈0.42 at pass^3). The LLM only touches the small escalated tail, and its
 output is confidence-gated + audited, so model stochasticity can never silently move money.
 
+## Guard-safety metric — reproducible, not anecdotal
+The verify-guard's catch rate is measured, not just asserted from one observed incident.
+`py src/eval_guard.py` replays the escalated tail against a mocked **worst-case adversarial
+model that hallucinates on every case** (proposes a narration-unsupported pick, at 0.9
+confidence, on 100% of decisions) — no server or key required, CI-safe.
+
+| metric | value |
+|---|---|
+| model hallucination rate (worst case) | 1.00 (3/3 — every mocked pick is unsupported by design) |
+| guard catch rate | **1.00** (3/3) |
+| wrong pairings applied after the guard | **0** (must be 0 — CI gate) |
+
+Cost + latency are also measured per decision (not estimated): local Ollama calls are
+genuinely **$0.00**; Anthropic calls report real token counts and an approximate cost
+(`ANTHROPIC_COST_PER_1K_*`, labelled approximate — verify against current pricing before
+treating as exact billing). Viewable per-decision, with the full prompt and raw model
+response, in the Streamlit UI's **LLM Decision Trace** tab.
+
+Four explicit policy-refusal scenarios (τ-bench-style: "asked to do X, refuses") are also
+tested and demoable on camera via `py src/demo_refusals.py`: no auto-apply without
+`--execute`; no auto-apply of a non-AUTO_RESOLVE decision even *with* `--execute`; no
+double-applying an already-committed decision; and narration cannot talk the pipeline into
+bypassing the gate by writing instruction-shaped text into it.
+
 ## The LLM path — validated live on a local model (and it found a real failure mode)
 The numbers above are the **keyless heuristic** fallback so CI is deterministic. The "real
 LLM" path runs at **zero cost via a local Ollama model** (`qwen3:4b`, default) — no key, no

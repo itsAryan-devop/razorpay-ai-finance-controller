@@ -135,6 +135,21 @@ with st.sidebar:
                "and only in EXECUTE mode. FLAG / ESCALATE always wait for a human. "
                "Re-applying an already-committed decision is skipped (idempotent).")
 
+    st.divider()
+    st.markdown("#### LLM decision trace (optional)")
+    st.caption("Every other tab renders on the fast heuristic so the UI never blocks. "
+               "This calls the real configured provider once (local Ollama if running, "
+               "else Anthropic if keyed, else heuristic) and captures the full trace.")
+    if st.button("🔬 Run escalated tail through the LLM", use_container_width=True):
+        with st.spinner("Calling the configured provider…"):
+            st.session_state.llm_trace_result = pipeline.run(
+                dry_run=True, commit=False, source=src_obj, provider="auto")
+        st.rerun()
+    if st.session_state.get("llm_trace_result") and st.button(
+            "Clear trace", use_container_width=True):
+        st.session_state.pop("llm_trace_result", None)
+        st.rerun()
+
 # ------------------------------------------------------------------------------- header
 mode = result["mode"]
 badge = "\U0001f7e2 DRY-RUN" if mode == "DRY-RUN" else "\U0001f534 EXECUTE"
@@ -152,8 +167,9 @@ else:
         f"audit log; {result['held']} held for a human. The LLM *reads*; deterministic "
         "code does the math.")
 
-tab_dash, tab_queue, tab_audit = st.tabs(
-    ["\U0001f4ca Dashboard", "\U0001f4cb Exception queue", "\U0001f512 Audit log"])
+tab_dash, tab_queue, tab_audit, tab_trace = st.tabs(
+    ["\U0001f4ca Dashboard", "\U0001f4cb Exception queue", "\U0001f512 Audit log",
+     "\U0001f50d LLM Decision Trace"])
 
 # ============================================================================ DASHBOARD
 with tab_dash:
@@ -319,3 +335,62 @@ with tab_audit:
     st.caption("Maps to RBI FREE-AI: Accountability and Understandable-by-Design "
                "(a replayable, non-repudiable trail), with humans retaining final "
                "authority (the execute gate).")
+
+# =================================================================== LLM DECISION TRACE
+with tab_trace:
+    st.markdown("#### LLM decision trace")
+    st.caption("Homegrown observability (no third-party dependency): for each escalated "
+               "case, the full prompt, the model's raw response, latency, token counts, "
+               "an approximate cost, and whether the verify-guard rejected the pick — the "
+               "same data a Langfuse/LangSmith trace panel would show, generated in-house.")
+
+    tr = st.session_state.get("llm_trace_result")
+    if not tr:
+        st.info("Click **🔬 Run escalated tail through the LLM** in the sidebar to "
+                "populate this tab with a real provider call (local Ollama if running, "
+                "else Anthropic if keyed, else heuristic — always safe, never blocks "
+                "the other tabs).")
+    else:
+        recs = tr["records"]
+        engines = sorted({r["engine"] for r in recs})
+        costs = [r["trace"].get("cost_usd") for r in recs if r["trace"].get("cost_usd") is not None]
+        latencies = [r["trace"].get("latency_ms") for r in recs
+                    if r["trace"].get("latency_ms") is not None]
+        hallucinations = sum(1 for r in recs if r.get("guard_rejected"))
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Decisions traced", len(recs))
+        c2.metric("Total cost", f"${sum(costs):.5f}" if costs else "$0.00",
+                  help="$0 for local Ollama / heuristic — genuinely free, not estimated.")
+        c3.metric("Avg latency", f"{sum(latencies)/len(latencies):.0f} ms" if latencies else "—")
+        c4.metric("Guard rejections", hallucinations,
+                  help="Model picks the deterministic guard rejected for lacking "
+                       "narration support — the over-confidence safety net firing.")
+        st.caption(f"Engine(s) this run: {', '.join(engines)}. Reproducible worst-case "
+                   f"guard metric: `py src/eval_guard.py`.")
+
+        for r in recs:
+            badge = "🛡️ REJECTED by guard" if r.get("guard_rejected") else "✅"
+            with st.expander(f"{r['entity_id']} — {r['engine']} — {r['route']} "
+                             f"(conf {r['confidence']}) {badge}"):
+                t = r["trace"]
+                ec1, ec2, ec3 = st.columns(3)
+                ec1.metric("Latency", f"{t.get('latency_ms', '—')} ms")
+                ec2.metric("Tokens in/out",
+                          f"{t.get('tokens_in', '—')}/{t.get('tokens_out', '—')}")
+                ec3.metric("Cost", f"${t['cost_usd']:.5f}" if t.get("cost_usd") else "$0.00")
+                st.caption(t.get("cost_note", ""))
+                if r.get("model_attempted"):
+                    st.markdown(f"**Model's raw pick before the guard:** "
+                               f"`{r.get('model_raw_pick')}`" +
+                               (" — **rejected**, no narration support for this order's "
+                                "code; fell back to the heuristic."
+                                if r.get("guard_rejected") else " — accepted."))
+                if t.get("error"):
+                    st.error(f"Provider call failed: {t['error']}")
+                if t.get("prompt"):
+                    st.text_area("Prompt sent to the model", t["prompt"], height=150,
+                                key=f"prompt_{r['entity_id']}")
+                if t.get("raw_response"):
+                    st.code(t["raw_response"], language="json")
+                st.caption(f"Final justification logged: {r['reason']}")

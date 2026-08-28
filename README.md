@@ -71,8 +71,10 @@ py src/selftest_data.py      # 9 ground-truth invariants
 py src/matcher.py            # deterministic baseline + per-class metrics + exceptions.csv
 py src/pipeline.py           # end-to-end: matcher → handler → before/after + audit log
 py src/pipeline.py --execute # apply high-confidence auto-resolutions (gated)
-pytest -q                    # 39 tests (incl. an adversarial suite for the LLM guard)
-streamlit run app.py         # dashboard + exception queue + audit viewer
+py src/eval_guard.py         # reproducible guard-safety metric vs a worst-case adversarial model
+py src/demo_refusals.py      # scripted demo: 4 out-of-policy actions, all refused
+pytest -q                    # 44 tests (adversarial LLM-guard suite + policy-refusal suite)
+streamlit run app.py         # dashboard + exception queue + audit viewer + LLM trace
 ```
 The LLM path activates when a provider is available; otherwise a transparent
 text-similarity heuristic runs so the pipeline and CI work with no key and no server.
@@ -107,6 +109,11 @@ hardcoded. Three views:
 - **Audit log** — the hash-chained entries with a live **"Verify chain integrity"** button
   that recomputes the SHA-256 chain, and the dry-run/execute gate exposed as a guarded button
   (only high-confidence AUTO_RESOLVE applies, behind an explicit confirm).
+- **LLM Decision Trace** — homegrown observability (no Langfuse/LangSmith dependency): a
+  deliberate sidebar action calls the real configured provider once and shows, per decision,
+  the full prompt, the model's raw response, latency, token counts, an approximate cost
+  (**$0.00** for local Ollama), and whether the verify-guard rejected the pick. The dashboard/
+  queue/audit tabs always render on the fast heuristic so the UI never blocks on a model call.
 
 Data is synthetic because **real Razorpay test-mode settlements never populate** (test mode
 is the pre-KYC state — verified by a day-1 spike, see [LOG.md](LOG.md)). The generator is
@@ -188,7 +195,9 @@ src/sources.py         ingestion seam: CSV/SQLite adapters + production stubs
 src/obs.py  src/net.py JSON structured logging · bounded-backoff retries
 app.py                 Streamlit UI: dashboard · exception queue · audit viewer
 Dockerfile  docker-compose.yml   reproducible image (CI builds it every push)
-tests/                 39 pytest cases (incl. test_adversarial.py) run in CI on every push
+src/eval_guard.py      reproducible guard-safety metric vs a worst-case adversarial model
+src/demo_refusals.py   scripted on-camera demo: 4 out-of-policy actions, all refused
+tests/                 44 pytest cases (adversarial LLM guard + policy refusals) in CI
 ARCHITECTURE.md        components · current-vs-target · scaling · failure modes
 NOTES.md PLAN.md LOG.md RESULTS.md   context, roadmap, failure trail, metrics
 research/              the research reports the design is grounded in (incl. Razorpay's
