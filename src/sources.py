@@ -153,13 +153,17 @@ class SqlLedgerSource(LedgerSource):
 
 class RazorpaySettlementsSource(SettlementSource):
     """PRODUCTION STUB. In a real deployment this pages the Razorpay settlement recon
-    report (`/v1/settlements/recon/combined`, or the SDK's settlement APIs) for a
-    settlement id / cycle and maps Razorpay's fields onto SETTLEMENT_COLS:
+    report (`/v1/settlements/recon/combined`, or the SDK's settlement APIs — equivalently,
+    the `fetch_settlement_recon_details` tool on the official `razorpay-mcp-server`,
+    github.com/razorpay/razorpay-mcp-server, verified present in its 45-tool README as of
+    2026-08-28) for a settlement id / cycle and maps Razorpay's fields onto SETTLEMENT_COLS:
         id->settlement_id, utr->settlement_utr, entity_id/payment_id->entity_id,
         type (payment|refund|adjustment), amount/fee/tax/credit/debit, settled_at,
         on_hold/on_hold_until (timing), order_id, method, description (bank narration).
-    Left unwired on purpose. NOTE: test-mode settlements never populate (pre-KYC — see
-    LOG.md), so this needs a KYC-activated account; the CSV/SQLite path is the demo."""
+    Left unwired on purpose — deliberately deferred (see ARCHITECTURE.md §8), blocked on
+    fresh rzp_test_ credentials + a Go toolchain/binary, neither present when checked.
+    NOTE: test-mode settlements never populate regardless (pre-KYC — see LOG.md), so this
+    needs a KYC-activated account either way; the CSV/SQLite path is the demo."""
 
     def __init__(self, key_id: str, key_secret: str):
         self.key_id = key_id

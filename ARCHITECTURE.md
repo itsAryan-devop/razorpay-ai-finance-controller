@@ -122,6 +122,16 @@ arithmetic a ledger.
   (verified day-1 spike, see [LOG.md](LOG.md)); it needs an activated account, not more code.
 - **Postgres wiring / multi-tenant auth** — documented as the next step (compose has the
   commented service), not shipped half-done.
+- **Live `razorpay-mcp-server` wiring** — deliberately researched then deferred (2026-08-28),
+  not skipped out of oversight. It's genuinely the highest-signal, lowest-effort credibility
+  move available *once unblocked*, but "unblocked" concretely means: (a) fresh `rzp_test_`
+  keys generated from a Razorpay dashboard, and (b) either installing the Go toolchain or
+  fetching a prebuilt release binary — neither of which was on this machine when checked.
+  Real settlement data would still be KYC-gated regardless (§ live settlement integration,
+  above), so wiring it would demonstrate real MCP tool-calling on the *payments* side (which
+  the day-1 spike already proved works via raw API calls), not unblock new data. `sources.py`'s
+  `RazorpaySettlementsSource` stub already documents the exact tool name
+  (`fetch_settlement_recon_details`) it would call.
 
 Deployment: `docker compose up` runs the UI; `docker run … python src/pipeline.py --execute
 --cycle <id>` runs the batch job. CI builds the image and runs the idempotency re-check on
