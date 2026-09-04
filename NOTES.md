@@ -282,3 +282,12 @@ GitHub now has DOZENS of public Track-04 reconciliation submissions (deadline ~1
 
 ### Added: many-to-one batch settlement matching + cp1252 root fix (2026-09-04)
 Closed the top competitor-gap from research/06 (subset-sum many-to-one), additively — seed-42 core untouched. `matcher.subset_sum_match()` + `match_batch_settlements()` on a separate `*_batch.csv` fixture (BATCH_SEED, spaced dates): 4/5 lump credits resolved, 1 ambiguous escalated (two subsets sum equal → defer, not guess), 0 wrong. New dashboard panel + CLI leg + RESULTS section. Also root-fixed the recurring ₹ cp1252 crash: `obs.enable_utf8_stdout()` at the CLI entrypoint → CLI and UI now show identical ₹ figures. 57→64 tests, all gates green.
+
+## ▶ NEXT FEATURES TO BUILD (agreed 2026-09-04, for the next chat)
+Context: research/06 competitor scan found we lead on production discipline but 2 rivals lead on reconciliation DEPTH. We've since closed subset-sum many-to-one, calibration, ₹-attribution, wrong-match count. THREE gaps remain; decision = build 2, 3rd optional. Build ADDITIVELY (separate fixture + separate leg, like the batch feature) so the 64-test green core stays byte-for-byte intact.
+
+1. **Format-level held-out (BUILD FIRST — cheapest, highest rigor/effort).** Today `eval_holdout.py` varies the SEED (same schema). Add a held-out that varies the bank-narration FORMAT (layouts/styles the rules were never tuned on) and show the LLM's value is concentrated there (competitor deepthi1884: "+15 pts on unseen formats, +0 on known"). Builds on existing held-out infra. Low risk.
+2. **Three-way reconciliation (BUILD SECOND — highest impact).** Today two-way (ledger vs settlement). Add a BANK-STATEMENT leg: bank statement (what hit the account) vs settlement report (what Razorpay says settled) vs ledger (what merchant expected). Matches Razorpay's own "multi-source reconciliation" direction. Do it as a SEPARATE leg (new *_bank.csv fixture) so core is untouched. Med-high effort.
+3. **NL Settlement Q&A (OPTIONAL — only if time).** Natural-language questions over results ("how much settled last week / which orders never settled"). A named Razorpay direction, demoable — BUT opens a new free-text LLM surface (new injection surface, needs its own guardrails) and mildly tensions our bounded/no-free-chat positioning. Read-only over already-computed results is the safe framing.
+
+Priority: 1 → 2 → (3 optional). Launch checklist (GitHub push, video, form) still the real floor — an unsubmitted repo scores zero.
