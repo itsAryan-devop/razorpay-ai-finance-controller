@@ -106,6 +106,16 @@ def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
     # The rupee view: reconciliation is about money, not row counts.
     money = report_metrics.money_impact(results, ledger, recon, resolved_credits)
 
+    # Many-to-one leg: lump settlement credits that each pay out a batch of orders.
+    # Separate fixture, separate metric — never disturbs the 1:1 numbers above. Empty
+    # (all zeros) if the batch fixture isn't present, so this is always safe.
+    batch_ledger, batch_recon = matcher._load_batch()
+    if batch_recon:
+        batch_records = matcher.match_batch_settlements(batch_ledger, batch_recon)
+        batch = matcher.score_batches(batch_records, matcher._load_batch_truth())
+    else:
+        batch = {"total": 0, "correct": 0, "wrong": 0, "escalated": 0, "unmatched": 0}
+
     # ---- GUARDRAILS: gate every decision, then (optionally) commit a tamper-evident entry.
     # BOUNDED/GATED: only high-confidence AUTO_RESOLVE may auto-apply, and only in EXECUTE.
     # FLAG/ESCALATE always wait for a human. Dry-run is the default.
@@ -144,6 +154,7 @@ def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
                     "wrong_before": wrong_before, "wrong_after": wrong_after},
         "calibration": calibration,
         "money": money,
+        "batch": batch,
         "extra_credit_after": {"precision": ec_after, "tp": ec_tp_after,
                                "predicted": ec_pred_after,
                                "reclassified": ec_reclassified},
@@ -172,6 +183,7 @@ def _ensure_data():
 
 def main(dry_run=True, cycle="adhoc", reset_audit=False):
     obs.configure(os.getenv("LOG_LEVEL", "INFO"))
+    obs.enable_utf8_stdout()          # so ₹ prints on a Windows cp1252 console (root fix)
     _ensure_data()
     r = run(dry_run=dry_run, cycle=cycle, commit=True, reset_audit=reset_audit)
     log.info("reconciliation run complete", extra={"fields": {
@@ -193,6 +205,12 @@ def main(dry_run=True, cycle="adhoc", reset_audit=False):
     print(report_metrics.format_calibration(r["calibration"]))
     print("\n-- money impact --")
     print(report_metrics.format_money(r["money"]))
+
+    b = r["batch"]
+    if b["total"]:
+        print(f"\n-- batch settlement (many-to-one) --\n"
+              f"{b['correct']}/{b['total']} lump credits resolved to the correct order-set"
+              f" | {b['escalated']} ambiguous escalated | {b['wrong']} WRONG")
 
     extra = f", {r['skipped']} skipped (idempotent)" if r["skipped"] else ""
     print(f"\n[{r['mode']}] cycle={r['cycle']} run={r['run_id']} — "

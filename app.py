@@ -196,6 +196,28 @@ with tab_dash:
               help=f"{result['n_records']} records reconciled in "
                    f"{result['elapsed'] * 1000:.1f} ms (in-memory deterministic matcher).")
 
+    # ---- many-to-one leg: one lump settlement credit paying out a batch of orders ----
+    b = result.get("batch", {})
+    if b.get("total"):
+        st.divider()
+        st.markdown("#### Batch settlement matching (many-to-one)")
+        st.caption("Real Razorpay settlements pay out many orders in one lump credit. "
+                   "This leg finds which subset of open orders sums (net of fees) to each "
+                   "credit via a bounded subset-sum search — and escalates rather than "
+                   "guessing when more than one subset fits.")
+        b1, b2, b3, b4 = st.columns(4)
+        b1.metric("Lump credits resolved", f"{b['correct']}/{b['total']}",
+                  help="Each lump credit matched to the exact order-set that composes it.")
+        b2.metric("Ambiguous → escalated", b["escalated"],
+                  help="More than one subset sums to the credit — deferred to a human, "
+                       "not guessed.")
+        b3.metric("Wrong batches", b["wrong"],
+                  delta="none" if b["wrong"] == 0 else "REVIEW",
+                  delta_color="normal" if b["wrong"] == 0 else "inverse",
+                  help="Confidently-wrong batch resolutions. Absolute count, never hidden.")
+        b4.metric("Unmatched", b["unmatched"],
+                  help="Lump credits with no order-subset summing to them.")
+
     # ---- the rupee view: reconciliation is about money, not row counts ----
     st.divider()
     st.markdown("#### Money impact — every rupee attributed")

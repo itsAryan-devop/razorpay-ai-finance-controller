@@ -23,12 +23,13 @@ All money is paise (int) end to end — a reconciler must never float money.
 import llm_handler
 
 
-def rupees(paise: int, symbol: str = "Rs.") -> str:
+def rupees(paise: int, symbol: str = "₹") -> str:
     """Format paise for display. Display only — never used in math.
 
-    Defaults to the ASCII 'Rs.' because the Windows console codec here is cp1252 and
-    cannot encode U+20B9 (the same crash as day 1, see LOG.md). Callers rendering to a
-    UTF-8 surface (the Streamlit UI in a browser) can pass symbol="₹".
+    Uses the ₹ sign by default now that the CLI entrypoint forces UTF-8 stdout
+    (obs.enable_utf8_stdout) — the root-cause fix for the day-1 cp1252 crash, so CLI and
+    the Streamlit UI show identical figures. `symbol` is still overridable for any surface
+    that genuinely can't render it.
     """
     return f"{symbol}{int(paise) / 100:,.2f}"
 

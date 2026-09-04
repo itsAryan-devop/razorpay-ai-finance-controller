@@ -230,6 +230,7 @@ def generate():
 
     _write(OUT_DIR, ledger_rows, recon_rows, truth_rows)
     _summary(labels, ledger_rows, recon_rows)
+    generate_batches(OUT_DIR)
 
 
 def _write(out_dir, ledger_rows, recon_rows, truth_rows):
@@ -244,6 +245,88 @@ def _write(out_dir, ledger_rows, recon_rows, truth_rows):
     dump("ledger.csv", ledger_rows)
     dump("settlements.csv", recon_rows)
     dump("ground_truth.csv", truth_rows)
+
+
+BATCH_SEED = 4242            # independent RNG: batch fixture is purely ADDITIVE — it does
+                             # NOT touch the seed-42 core dataset or any of its numbers.
+
+
+def _net(amount_paise: int) -> int:
+    base, gst = razorpay_fee_paise(amount_paise)
+    return amount_paise - base - gst
+
+
+def generate_batches(out_dir):
+    """Many-to-one fixture: lump settlement credits that each pay out a BATCH of orders
+    (no per-order recon row). Written to *_batch.csv, separate from the 1:1 core so it
+    never disturbs existing metrics. Includes one DELIBERATELY AMBIGUOUS batch where two
+    different order-subsets sum to the same credit — the matcher must escalate it, not
+    guess. Deterministic (BATCH_SEED)."""
+    rng = random.Random(BATCH_SEED)
+    ledger, recon, truth = [], [], []
+    base_day = dt.date(2026, 7, 10)
+    _batch_no = [0]              # spaces batches 15 days apart so the date window never
+                                # pools orders across two different settlements
+
+    def add_batch(order_amounts, ambiguous_extra=None):
+        """order_amounts: gross paise for the TRUE member orders. ambiguous_extra: gross
+        paise for decoy orders that create a second subset summing to the same credit."""
+        sid = _uid("setl_", rng)
+        utr = str(rng.randint(10**11, 10**12 - 1)) + rng.choice("abcdefgh")
+        captured = base_day + dt.timedelta(days=15 * _batch_no[0])
+        _batch_no[0] += 1
+        settled = _settled_date(captured, rng.choice([0, 1]))
+        member_pids = []
+        for amt in order_amounts:
+            name, code = make_customer(rng)
+            pid, oid = _uid("pay_", rng), _uid("order_", rng)
+            ledger.append({"order_id": oid, "payment_id": pid, "amount": amt,
+                           "method": "netbanking", "captured_at": captured.isoformat(),
+                           "status": "captured", "customer": f"{name} ({code})"})
+            member_pids.append(pid)
+            truth.append({"payment_id": pid, "settlement_id": sid, "amount": amt})
+        for amt in (ambiguous_extra or []):        # decoys: real orders, NOT in this credit
+            name, code = make_customer(rng)
+            pid, oid = _uid("pay_", rng), _uid("order_", rng)
+            ledger.append({"order_id": oid, "payment_id": pid, "amount": amt,
+                           "method": "netbanking", "captured_at": captured.isoformat(),
+                           "status": "captured", "customer": f"{name} ({code})"})
+            # decoys have no true settlement here — truth maps them to '' (unsettled)
+            truth.append({"payment_id": pid, "settlement_id": "", "amount": amt})
+        credit = sum(_net(a) for a in order_amounts)
+        recon.append({"entity_id": sid, "type": "settlement", "credit": credit,
+                      "settlement_id": sid, "settlement_utr": utr,
+                      "settled_at": settled.isoformat(),
+                      "n_orders": len(order_amounts)})
+
+    # 4 clean batches of varying size (net sums are unique -> unique subset)
+    add_batch([120000, 250000, 90000])
+    add_batch([340000, 175000])
+    add_batch([80000, 80000, 80000, 80000])        # equal amounts, still one subset = all four
+    add_batch([210000, 330000, 145000, 260000])
+    # 1 ambiguous batch: credit = net(300000). Decoys net(120000)+net(180000) also sum to it
+    # (net is linear here: net(a)+net(b) != net(a+b) exactly, so pick amounts whose NETS add
+    # up — use amounts where the fee rounding lines up). Simplest robust ambiguity: two TRUE
+    # members whose nets equal a third decoy's net individually is hard; instead give two
+    # equal-net decoys that reproduce the members' combined net.
+    a = 200000
+    b = 200000
+    add_batch([a, b], ambiguous_extra=[a, b])      # {oA,oB} and {decoyA,decoyB} both sum equal
+
+    _write_batch(out_dir, ledger, recon, truth)
+    print(f"Batch fixture: {len(ledger)} orders across {len(recon)} lump settlements "
+          f"(incl. 1 ambiguous) | output in data/generated/*_batch.csv")
+
+
+def _write_batch(out_dir, ledger, recon, truth):
+    def dump(name, rows):
+        with open(os.path.join(out_dir, name), "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            w.writeheader()
+            w.writerows(rows)
+    dump("ledger_batch.csv", ledger)
+    dump("settlements_batch.csv", recon)
+    dump("ground_truth_batch.csv", truth)
 
 
 def _summary(labels, ledger_rows, recon_rows):

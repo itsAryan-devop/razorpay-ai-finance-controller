@@ -289,6 +289,123 @@ def pairing_report(results: list[Result]):
     print("  -> the escalated cases are exactly the residue the LLM handler (Day 6) works on.")
 
 
+# =========================================================================================
+# Many-to-one (batch) settlement matching — a real Razorpay behaviour: one lump settlement
+# credit pays out a BATCH of orders at once, with no per-order recon row. Reconciling it
+# means finding which subset of open orders sums (net of fees) to that one credit.
+#
+# This is a SEPARATE leg from reconcile() above (which is strict 1:1). It runs on its own
+# fixture (data/generated/*_batch.csv) so it never disturbs the core 1:1 numbers or tests.
+# The search is bounded (date window + subset-size cap), and — critically — when MORE than
+# one subset sums to the same credit it ESCALATES rather than guessing: an ambiguous batch
+# is a genuine "ask a human", not a coin flip. "The code does the arithmetic; ambiguity is
+# deferred, never faked."
+# =========================================================================================
+BATCH_WINDOW_DAYS = 6         # an order can belong to a settlement within this many days
+BATCH_MAX_SIZE = 5            # bound the subset search (real batches are small)
+BATCH_MAX_SUBSETS = 8         # stop early past this many hits — it's already ambiguous
+
+
+def net_of_fees(amount_paise: int) -> int:
+    """Net a merchant actually receives for one order = amount - total fee. Same formula
+    the generator uses, so batch sums reconcile to the exact paise."""
+    return amount_paise - expected_total_fee(amount_paise)
+
+
+def subset_sum_match(candidates, target, max_size=BATCH_MAX_SIZE, cap=BATCH_MAX_SUBSETS):
+    """candidates: list of (id, amount_paise), pre-filtered to a date window. Returns every
+    distinct subset (each a tuple of ids, size<=max_size) whose amounts sum EXACTLY to
+    target. Integer paise only — never floats. >1 result means genuine ambiguity."""
+    items = [(cid, amt) for cid, amt in candidates if 0 < amt <= target]
+    results = []
+
+    def backtrack(start, remaining, chosen):
+        if remaining == 0 and chosen:
+            results.append(tuple(cid for cid, _ in chosen))
+            return
+        if remaining < 0 or len(chosen) >= max_size or len(results) > cap:
+            return
+        for i in range(start, len(items)):
+            cid, amt = items[i]
+            if amt <= remaining:
+                backtrack(i + 1, remaining - amt, chosen + [(cid, amt)])
+
+    backtrack(0, target, [])
+    return results
+
+
+def match_batch_settlements(ledger, recon, window_days=BATCH_WINDOW_DAYS):
+    """Resolve each lump settlement credit to the subset of orders it paid out.
+    Returns one record per settlement credit: {settlement_id, route, chosen(set of pids),
+    n_candidates, n_subsets}. route = AUTO (unique subset) | ESCALATE (ambiguous, >1) |
+    UNMATCHED (no subset). Orders are consumed once resolved so two credits can't claim
+    the same order."""
+    orders = [(l["payment_id"], int(l["amount"]), _date(l["captured_at"])) for l in ledger]
+    claimed: set = set()
+    records = []
+    for r in recon:
+        target = int(r["credit"])
+        settled = _date(r["settled_at"])
+        cands = [(pid, net_of_fees(amt)) for pid, amt, cap in orders
+                 if pid not in claimed and 0 <= (settled - cap).days <= window_days]
+        subsets = subset_sum_match(cands, target)
+        if len(subsets) == 1:
+            chosen = set(subsets[0])
+            claimed |= chosen
+            route = "AUTO"
+        elif len(subsets) > 1:
+            chosen, route = set(), "ESCALATE"
+        else:
+            chosen, route = set(), "UNMATCHED"
+        records.append({"settlement_id": r["settlement_id"], "route": route,
+                        "chosen": chosen, "n_candidates": len(cands),
+                        "n_subsets": len(subsets)})
+    return records
+
+
+def _load_batch():
+    def rd(name):
+        path = os.path.join(D, name)
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return list(csv.DictReader(f))
+    return rd("ledger_batch.csv"), rd("settlements_batch.csv")
+
+
+def _load_batch_truth():
+    """settlement_id -> frozenset(order pids that truly compose it)."""
+    path = os.path.join(D, "ground_truth_batch.csv")
+    truth: dict = {}
+    if not os.path.exists(path):
+        return truth
+    with open(path, encoding="utf-8") as f:
+        for t in csv.DictReader(f):
+            truth.setdefault(t["settlement_id"], set()).add(t["payment_id"])
+    return {k: frozenset(v) for k, v in truth.items()}
+
+
+def score_batches(records, truth):
+    """Grade batch resolution against the answer key. correct = AUTO and chosen == truth;
+    wrong = AUTO but chosen != truth (a confidently wrong batch — reported, never hidden);
+    escalated = ambiguous, deferred honestly."""
+    total = len(records)
+    correct = wrong = escalated = unmatched = 0
+    for rec in records:
+        want = truth.get(rec["settlement_id"], set())
+        if rec["route"] == "AUTO":
+            if rec["chosen"] == want:
+                correct += 1
+            else:
+                wrong += 1
+        elif rec["route"] == "ESCALATE":
+            escalated += 1
+        else:
+            unmatched += 1
+    return {"total": total, "correct": correct, "wrong": wrong,
+            "escalated": escalated, "unmatched": unmatched}
+
+
 if __name__ == "__main__":
     ledger, recon = _load()
     results = reconcile(ledger, recon)
@@ -297,3 +414,11 @@ if __name__ == "__main__":
     score(results, _load_truth())
     pairing_report(results)
     write_exceptions(results)
+
+    bl, br = _load_batch()
+    if br:
+        brecs = match_batch_settlements(bl, br)
+        bm = score_batches(brecs, _load_batch_truth())
+        print(f"\nbatch settlement (many-to-one): {bm['correct']}/{bm['total']} credits "
+              f"resolved to the correct order-set | {bm['escalated']} ambiguous escalated "
+              f"| {bm['wrong']} WRONG")

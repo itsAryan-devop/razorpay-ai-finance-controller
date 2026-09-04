@@ -22,6 +22,7 @@ Every money-affecting decision is **explainable, bounded, and gated**.
 | reconciliation match rate | **0.911** (102/112 orders tied to a settlement) | 0.911 (structural) |
 | misattribution pairing (rules → +handler) | **8/11 → 11/11** | — |
 | **wrong matches** | **0** | **0** |
+| batch settlement (many-to-one) | **4/5 resolved · 1 escalated · 0 wrong** | — |
 | routing | deterministic escalates ambiguity; handler auto-applies only high-confidence | |
 
 **The dev seed is the *hardest* of the five** — most colliding credits, most escalations —
@@ -77,6 +78,9 @@ accuracy and an honest exception list.
         │ append-only audit log              │  waits for a human.
         └────────────────────────────────────┘
 ```
+Plus a **many-to-one leg**: real settlements pay out a batch of orders in one lump credit,
+reconciled by a bounded **subset-sum search** (ambiguous batches escalate, never guess).
+
 Design principle (from Razorpay's own engineering blog and the reconciliation literature):
 **the LLM reads; deterministic code does the math.** An LLM must never arithmetic a ledger.
 
@@ -91,7 +95,7 @@ py src/pipeline.py           # end-to-end: matcher → handler → before/after 
 py src/pipeline.py --execute # apply high-confidence auto-resolutions (gated)
 py src/eval_guard.py         # reproducible guard-safety metric vs a worst-case adversarial model
 py src/demo_refusals.py      # scripted demo: 4 out-of-policy actions, all refused
-pytest -q                    # 57 tests (adversarial guard, policy refusals, money attribution)
+pytest -q                    # 64 tests (adversarial guard, policy refusals, money attr., batch matching)
 streamlit run app.py         # dashboard + exception queue + audit viewer + LLM trace
 ```
 The LLM path activates when a provider is available; otherwise a transparent
@@ -124,7 +128,8 @@ hardcoded. Four views:
   split into settled / never-settled with an unattributed residual of ₹0.00), the
   **confidence-calibration table** (empirical accuracy per band, graded against the answer
   key), the exception mix, per-class precision/recall, and the EXTRA_CREDIT queue
-  precision lift (0.73 → 1.00 after the handler pairs the colliding credits).
+  precision lift (0.73 → 1.00 after the handler pairs the colliding credits), and the
+  **batch settlement (many-to-one) panel** (lump credits resolved to their order-set, ambiguous ones escalated).
 - **Exception queue** — the typed queue, filterable by type and route, plus the
   escalated→handler decisions with their confidence and justification.
 - **Audit log** — the hash-chained entries with a live **"Verify chain integrity"** button
@@ -218,8 +223,9 @@ app.py                 Streamlit UI: dashboard · exception queue · audit viewe
 Dockerfile  docker-compose.yml   reproducible image (CI builds it every push)
 src/eval_guard.py      reproducible guard-safety metric vs a worst-case adversarial model
 src/report_metrics.py  confidence calibration - rupee attribution - wrong-match count
+src/matcher.py         [also] subset-sum many-to-one batch settlement matching
 src/demo_refusals.py   scripted on-camera demo: 4 out-of-policy actions, all refused
-tests/                 57 pytest cases (adversarial guard, policy refusals, money attr.) in CI
+tests/                 64 pytest cases (adversarial guard, refusals, money attr., batch match) in CI
 ARCHITECTURE.md        components · current-vs-target · scaling · failure modes
 NOTES.md PLAN.md LOG.md RESULTS.md   context, roadmap, failure trail, metrics
 research/              the research reports the design is grounded in (incl. Razorpay's

@@ -46,3 +46,16 @@ def configure(level: str = "INFO") -> None:
 
 def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
+
+
+def enable_utf8_stdout() -> None:
+    """Force stdout/stderr to UTF-8 so unicode (e.g. the ₹ sign) prints on a Windows
+    cp1252 console instead of crashing with UnicodeEncodeError — the root-cause fix for
+    the recurring day-1 bug (see LOG.md), applied once at the CLI entrypoint rather than
+    ASCII-substituting every string. errors='replace' means a truly un-renderable glyph
+    degrades to '?' instead of raising. No-op where reconfigure is unavailable."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass

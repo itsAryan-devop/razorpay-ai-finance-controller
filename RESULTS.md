@@ -97,6 +97,24 @@ residual is **reported rather than asserted away**, so a future bug surfaces as 
 instead of hiding; `test_report_metrics.py` enforces that it stays exactly zero, and that
 every figure remains an integer (paise), because a reconciler must never float money.
 
+## Batch settlement matching (many-to-one)
+Real Razorpay settlements pay out a **batch of orders in one lump credit**, with no
+per-order recon row. Reconciling that means finding which subset of open orders sums
+(net of fees) to the credit — a **bounded subset-sum search** (date window + size cap),
+integer paise throughout. Run on a dedicated fixture (`*_batch.csv`), separate from the
+1:1 core so it never perturbs the numbers above.
+
+| metric | value |
+|---|---|
+| lump credits resolved to the correct order-set | **4 / 5** |
+| ambiguous → escalated | **1** (two subsets sum to the same credit — deferred, not guessed) |
+| **wrong batches** | **0** |
+
+The ambiguous case is planted on purpose: two different order-subsets total the same
+credit, so amount alone cannot decide. The matcher **escalates it to a human rather than
+picking one** — the same "defer, don't fake" rule as the 1:1 leg. Reproduce:
+`py src/matcher.py` (batch line at the end) or `py src/pipeline.py`.
+
 ## Confidence calibration — graded, not asserted
 A confidence score nobody checks is decoration. Every handler decision is bucketed by its
 confidence band and scored against the ground-truth answer key, so the routing thresholds
