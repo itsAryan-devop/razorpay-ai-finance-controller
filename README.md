@@ -42,6 +42,12 @@ band and scored against the answer key, so the routing thresholds are justified 
 accuracy. Ungradeable rows are excluded rather than counted as wins (an empty band reads
 `n/a`, never a fabricated `1.00`).
 
+**Held out two ways.** The rules aren't overfit to the seed-42 *draw* (5-seed table above)
+and the narration reader isn't overfit to one bank *format*: the same pairing task rendered
+in unseen narration formats collapses the as-tuned reader from 1.00 to **0.25**, while the
+shipped normalized reader recovers to **0.75** deterministically — 0 wrong, formats it can't
+read escalate rather than guess. See [format-level held-out](RESULTS.md#format-level-held-out-the-reader-isnt-overfit-to-one-bank-narration-format).
+
 The accuracy is deliberately **not** 100%. On self-generated data a perfect score would
 just prove the matcher inverts the generator — a tell, not an achievement. The honest
 difficulty lives in **misattributed credits** (money that settled under the wrong payment
@@ -94,8 +100,10 @@ py src/matcher.py            # deterministic baseline + per-class metrics + exce
 py src/pipeline.py           # end-to-end: matcher → handler → before/after + audit log
 py src/pipeline.py --execute # apply high-confidence auto-resolutions (gated)
 py src/eval_guard.py         # reproducible guard-safety metric vs a worst-case adversarial model
+py src/eval_holdout.py       # seed-level held-out: rules aren't overfit to the seed-42 draw
+py src/eval_formats.py       # format-level held-out: narration reader generalizes across bank formats
 py src/demo_refusals.py      # scripted demo: 4 out-of-policy actions, all refused
-pytest -q                    # 64 tests (adversarial guard, policy refusals, money attr., batch matching)
+pytest -q                    # 72 tests (adversarial guard, policy refusals, money attr., batch + format held-out)
 streamlit run app.py         # dashboard + exception queue + audit viewer + LLM trace
 ```
 The LLM path activates when a provider is available; otherwise a transparent
@@ -225,7 +233,8 @@ src/eval_guard.py      reproducible guard-safety metric vs a worst-case adversar
 src/report_metrics.py  confidence calibration - rupee attribution - wrong-match count
 src/matcher.py         [also] subset-sum many-to-one batch settlement matching
 src/demo_refusals.py   scripted on-camera demo: 4 out-of-policy actions, all refused
-tests/                 64 pytest cases (adversarial guard, refusals, money attr., batch match) in CI
+src/eval_holdout.py    seed-level held-out gate · src/eval_formats.py format-level held-out gate
+tests/                 72 pytest cases (adversarial guard, refusals, money attr., batch + format) in CI
 ARCHITECTURE.md        components · current-vs-target · scaling · failure modes
 NOTES.md PLAN.md LOG.md RESULTS.md   context, roadmap, failure trail, metrics
 research/              the research reports the design is grounded in (incl. Razorpay's

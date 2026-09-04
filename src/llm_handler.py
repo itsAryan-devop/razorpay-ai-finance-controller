@@ -77,13 +77,30 @@ def customer_code(customer: str) -> str:
     return m.group(1) if m else ""
 
 
+def _norm(s: str) -> str:
+    """Casefold + strip every non-alphanumeric char, so a customer code is recognised
+    regardless of the bank's narration FORMAT: 'RN482' reads the same out of 'NEFT/RN482',
+    'imps/rn482 settlement', 'NEFT CR R N 4 8 2', or 'UPI-RN-482-CR'.
+
+    This deliberately does NOT change any *seen-format* result: the seed-42 narration is
+    'NEFT/{CODE}' with the exact uppercase code already a substring, so normalisation is a
+    no-op on it (verified: the seed-42 pairing stays 8/11->11/11, byte-for-byte). It only
+    lets the SAME rule generalise to formats it was never tuned on — the whole point of the
+    format-level held-out. It also keeps the verify-guard honest across formats: without it,
+    the guard's substring check would reject a CORRECT pick on any unseen narration format."""
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
 def _similarity(code: str, desc: str) -> float:
-    """Transparent fuzzy score between an order's code and a credit's narration."""
-    if not code or not desc:
+    """Transparent fuzzy score between an order's code and a credit's narration.
+    Format-robust: normalises case/separators first (see _norm) so the SAME rule reads a
+    code across bank-narration formats, not only the one style it was written against."""
+    nc, nd = _norm(code), _norm(desc)
+    if not nc or not nd:
         return 0.0
-    if code in desc:
+    if nc in nd:
         return 1.0
-    if code[:2] and code[:2] in desc:
+    if nc[:2] and nc[:2] in nd:
         return 0.5
     return 0.0
 

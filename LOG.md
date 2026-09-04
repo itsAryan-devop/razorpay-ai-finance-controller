@@ -175,6 +175,46 @@ The GitHub competitor scan (research/06) showed the Track-04 field is crowded an
 - Consistency pass across all three surfaces (CLI / Streamlit / docs): dashboard gained a Wrong-matches metric, a Money-impact panel and a calibration table; README headline reframed as **dev vs held-out side by side** with the wrong-match row; RESULTS.md gained both new sections; stale counts fixed (44→57 tests, "Three views"→"Four views"). Verified live in the browser — all panels render, ₹ displays correctly, no console errors.
 - 57 tests pass; held-out generalization gate PASS; guard-safety gate PASS.
 
+## 2026-09-05 — Format-level held-out (narration reader generalizes across bank formats)
+Competitor scan (research/06) flagged a rival (deepthi1884) holding out by unseen bank-narration
+FORMAT, not just seed — a more rigorous "why does the reader generalize" than our seed-only
+held-out. Built the format analogue, additively (own seed FORMAT_SEED, own `*_formats.csv`; the
+seed-42 core stayed byte-for-byte — verified accuracy 0.976 / 8-11 / calibration all identical
+before and after).
+- **`generate_data.generate_formats()`**: the SAME misattribution pairing task rendered in 5
+  narration formats — 1 seen (`NEFT/{code}`) + 4 unseen (lowercase, char-spaced, delimiter-split,
+  and name-only). Cases are built in colliding groups that share amount AND capture date, so the
+  matcher must escalate the whole group to the narration reader (amount+date can't disambiguate)
+  — otherwise the format would never be exercised. **First cut got this wrong**: I gave each case
+  a random capture date, so the same-amount ghosts fell outside each other's pairing window and
+  the matcher auto-paired them by amount+date (12 AUTO, 0 escalated) — the narration reader never
+  ran. Fixed by sharing one capture date per colliding group.
+- **`src/eval_formats.py`** (new, mirrors eval_holdout/eval_guard: standalone CLI + CI gate, not
+  a dashboard panel): runs the REAL pipeline per format with three readers — strict (as-tuned),
+  normalized (shipped), and the LLM when a provider is up. Result: the as-tuned reader averages
+  **0.25** recall on unseen formats; the normalized reader recovers to **0.75**, 0 wrong.
+- **⭐ BROKE / the real finding — the verify-guard would have NULLIFIED the LLM on unseen formats.**
+  Building this surfaced that `_similarity` (used by BOTH the heuristic AND the verify-guard) was a
+  case-sensitive substring check. On any unseen format (e.g. lowercase `imps/rn482`) it scores 0 —
+  so the guard would reject even a *correct* LLM pick, silently cancelling the LLM's value on
+  exactly the formats this feature exists to test. **Fix: `_norm()`** — casefold + strip
+  non-alphanumerics before the substring check, so the same rule reads a code across formats. Proved
+  it's a no-op on the seen format (seed-42 pairing 8/11→11/11 byte-identical, 64 core tests + both
+  existing gates still green) — it only *adds* generalization. `test_llm_pick_on_unseen_format_
+  survives_the_guard` locks the fix in.
+- **Honest framing, stated in RESULTS/README rather than spun**: for code-embedded formats a
+  normalized deterministic reader generalizes on its own — that's a feature (rules-first, auditable,
+  free), not proof we need an LLM. The one format with no code at all (`name_only`) is beyond any
+  code-only reader and correctly escalates all 12 (0 wrong); reading it needs richer LLM context
+  (customer name into the prompt + a name-aware guard) — owned as costed future work, not faked.
+- Tests **64 → 72** (`tests/test_formats.py`: fixture integrity, strict collapses on unseen casing,
+  normalized recovers code-embedded formats, normalized > strict on unseen mean, name_only escalates
+  never mis-pairs, 0 wrong any reader/format, the guard-survival regression, and the gate passes).
+  Caught + fixed a test-isolation bug along the way (the mocked-success test poisoned the Ollama
+  probe cache with `available=True`, making the gate test do real 60s-timeout calls to a dead port
+  → 24.5s; an autouse fixture now clears the cache before/after each test → 1.0s). New CI gate added.
+  72 pass; seed + guard + format gates all PASS.
+
 ## 2026-09-04 — Many-to-one batch settlement matching + cp1252 root fix
 Competitor scan (research/06) flagged subset-sum many-to-one (batched settlements) as the one genuine capability rivals had and we lacked. Implemented it — additively, so nothing existing moved.
 - **Root-caused the recurring ₹/cp1252 crash** instead of ASCII-substituting again: `obs.enable_utf8_stdout()` reconfigures stdout/stderr to UTF-8 (errors='replace') once at the CLI entrypoint, so `₹` prints on a Windows console. `report_metrics.rupees()` back to the ₹ sign → CLI and UI now show *identical* figures. This is the proper fix for the day-1 bug that kept recurring.

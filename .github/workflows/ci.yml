@@ -25,6 +25,8 @@ jobs:
         run: python src/eval_holdout.py
       - name: Guard safety gate (100% catch rate vs a worst-case adversarial model)
         run: python src/eval_guard.py
+      - name: Format held-out gate (narration reader must generalize across bank formats)
+        run: python src/eval_formats.py
       - name: Run pipeline (handler on escalated residue, keyless heuristic)
         run: python src/pipeline.py
       - name: Re-run pipeline (idempotency: second execute applies nothing)

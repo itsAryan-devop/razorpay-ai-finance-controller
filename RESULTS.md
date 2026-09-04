@@ -80,6 +80,39 @@ every seed because the exception-mix proportions are fixed, so the missing-credi
 structural, not random. Reproduce: `py src/eval_holdout.py` (a CI gate fails the build if
 held-out mean accuracy drops below 0.95).
 
+## Format-level held-out (the reader isn't overfit to one bank-narration format)
+The seed held-out above varies the random *draw*. This varies something harder and more
+realistic: the bank-narration **format** the exception handler reads. The handler pairs a
+misattributed credit to its order by finding the customer code inside the credit's free-text
+narration — a reader first written against exactly one style, `NEFT/{code}`. Real banks emit
+many. If the reader only works on the one format it was tuned on, its match rate on a live
+merchant's real statements would collapse. Same pairing task, rendered in several formats
+(`py src/eval_formats.py`):
+
+| narration format | seen? | strict (as-tuned) | normalized (shipped) | wrong |
+|---|---|---|---|---|
+| `NEFT/{code}` | yes | **1.00** | **1.00** | 0 |
+| `imps/{code} settlement` (lowercase) | no | **0.00** | **1.00** | 0 |
+| `NEFT CR {c o d e}` (spaced) | no | **0.00** | **1.00** | 0 |
+| `UPI-{co}-{de}-CR` (delimited) | no | 1.00 | 1.00 | 0 |
+| `NEFT CR {NAME}` (no code at all) | no | 0.00 | 0.00 | 0 |
+
+The as-tuned reader averages **0.25** recall on unseen formats; the shipped reader —
+normalized to casefold and strip separators (`_norm`) — recovers to **0.75**, with **0 wrong
+pairings** anywhere. Two honest points, not one:
+- **It generalizes deterministically.** For any format that still *contains* the code, a
+  normalized substring reader recovers it with no model call — auditable, free, `pass^k=1`.
+  This validates the rules-first thesis rather than manufacturing a dependence on the LLM:
+  the LLM's real value is the genuinely *ambiguous* tail (the seed-42 8/11→11/11 story), not
+  format variation an honest normalizer already handles.
+- **Where it can't read, it escalates — it never guesses.** The `name_only` format carries
+  no code, so every code-based reader (strict, normalized, and our current code-only LLM
+  prompt alike) correctly **escalates all 12 to a human** rather than mis-pairing on a
+  spurious signal — wrong = 0. Reading name-only narrations would need richer LLM context
+  (the customer name passed into the prompt) and a name-aware guard; costed as future work,
+  owned honestly rather than faked. A CI gate fails the build if the shipped reader ever
+  drops below 1.00 on the seen format or mis-pairs on any format.
+
 ## Money impact — every rupee attributed
 Reconciliation is about money, not row counts. The rupee view of the seed-42 run
 (`py src/pipeline.py`, or the Money-impact panel on the dashboard):

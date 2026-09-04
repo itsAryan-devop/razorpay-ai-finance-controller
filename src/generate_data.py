@@ -231,6 +231,7 @@ def generate():
     _write(OUT_DIR, ledger_rows, recon_rows, truth_rows)
     _summary(labels, ledger_rows, recon_rows)
     generate_batches(OUT_DIR)
+    generate_formats(OUT_DIR)
 
 
 def _write(out_dir, ledger_rows, recon_rows, truth_rows):
@@ -327,6 +328,111 @@ def _write_batch(out_dir, ledger, recon, truth):
     dump("ledger_batch.csv", ledger)
     dump("settlements_batch.csv", recon)
     dump("ground_truth_batch.csv", truth)
+
+
+# =========================================================================================
+# Format-level held-out fixture — vary the bank-narration FORMAT, not the RNG seed.
+#
+# The seed-based held-out (eval_holdout.py) proves the rules aren't overfit to one random
+# DRAW. But the narration-reading rule (_similarity: does the customer code appear in the
+# credit's description?) was written against exactly ONE narration style: "NEFT/{code}".
+# Real banks emit dozens of narration formats. This fixture renders the SAME misattribution
+# pairing task under several formats — one the rule was tuned on ("seen") and several it was
+# never tuned on ("held-out") — so we can measure how the deterministic reader degrades on
+# unseen formats and where the normalized reader / LLM recover it.
+#
+# Purely ADDITIVE: independent seed, own *_formats.csv files. The seed-42 core is untouched.
+# Every case is a MISATTRIBUTED_CREDIT with a COLLIDING amount (so the matcher must escalate
+# to the narration reader rather than pairing by amount alone) — narration is the ONLY signal.
+# =========================================================================================
+FORMAT_SEED = 20260904
+FORMAT_N = 12               # misattribution cases per format
+FORMAT_GROUP = 3           # cases per colliding-amount group (>=2 forces escalation)
+FORMAT_AMOUNTS = [119900, 189900, 279900, 359900]   # paise; grouped to force collisions
+
+
+def _spread_code(code: str) -> str:
+    return " ".join(code)                              # "RN482" -> "R N 4 8 2"
+
+
+# name -> (renderer(code, name) -> narration, is_seen). "seen" = the format the strict
+# code-in-description rule was written against. All others are held-out (never tuned on).
+NARRATION_FORMATS = {
+    "dev_neft":   (lambda code, name: f"NEFT/{code}",                     True),
+    "lower_imps": (lambda code, name: f"imps/{code.lower()} settlement",  False),  # casing
+    "spaced":     (lambda code, name: f"NEFT CR {_spread_code(code)}",    False),  # separators
+    "hyphen_upi": (lambda code, name: f"UPI-{code[:2]}-{code[2:]}-CR",    False),  # delimiters
+    "name_only":  (lambda code, name: f"NEFT CR {name.upper()}",          False),  # no code at all
+}
+
+
+def generate_formats(out_dir=OUT_DIR):
+    """One fixture per narration format. Each is a self-contained ledger + settlements +
+    ground-truth trio (ledger_{fmt}.csv, settlements_{fmt}.csv) plus a shared
+    ground_truth_formats.csv keyed (format, payment_id) -> true settlement credit id.
+    Deterministic (FORMAT_SEED). The pairing task is identical across formats; only the
+    narration rendering differs, so any accuracy gap between formats is caused purely by
+    the narration format, not by a harder underlying problem."""
+    rng = random.Random(FORMAT_SEED)
+    truth_rows = []
+    base_day = dt.date(2026, 7, 5)
+
+    for fmt, (render, _seen) in NARRATION_FORMATS.items():
+        ledger, recon = [], []
+        # Cases are built in colliding GROUPS: every member of a group shares BOTH the amount
+        # AND the capture date, so all their ghost credits fall inside each order's pairing
+        # window at once. That forces the deterministic matcher to ESCALATE the whole group
+        # (amount+date alone can't disambiguate) and hand it to the narration reader — which
+        # is the only signal that differs. Without shared dates the matcher would auto-pair
+        # each by amount+date and the narration format would never be exercised.
+        for g in range(FORMAT_N // FORMAT_GROUP):
+            amount = FORMAT_AMOUNTS[g % len(FORMAT_AMOUNTS)]
+            captured = base_day + dt.timedelta(days=rng.randint(0, 20))
+            fee_base, gst = razorpay_fee_paise(amount)
+            net = amount - fee_base - gst
+            for _k in range(FORMAT_GROUP):
+                pid, oid = _uid("pay_", rng), _uid("order_", rng)
+                name, code = make_customer(rng)
+                ledger.append({"order_id": oid, "payment_id": pid, "amount": amount,
+                               "method": "netbanking", "captured_at": captured.isoformat(),
+                               "status": "captured", "customer": f"{name} ({code})"})
+                # its money settled under a GHOST id; narration carries the signal in THIS format
+                ghost = _uid("pay_", rng)
+                sid = _uid("setl_", rng)
+                utr = str(rng.randint(10**11, 10**12 - 1)) + rng.choice("abcdefgh")
+                settled = _settled_date(captured, rng.choice([0, 1]))
+                recon.append({
+                    "entity_id": ghost, "type": "payment", "amount": amount,
+                    "fee": fee_base + gst, "tax": gst, "credit": net, "debit": 0,
+                    "settlement_id": sid, "settlement_utr": utr,
+                    "settled_at": settled.isoformat(), "order_id": "",
+                    "method": "netbanking", "description": render(code, name),
+                })
+                truth_rows.append({"format": fmt, "payment_id": pid,
+                                   "true_settlement": ghost, "amount": amount, "code": code})
+        _write_format(out_dir, fmt, ledger, recon)
+
+    _write_format_truth(out_dir, truth_rows)
+    print(f"Format held-out fixture: {len(NARRATION_FORMATS)} narration formats x "
+          f"{FORMAT_N} misattribution cases | output in data/generated/*_formats.csv")
+
+
+def _write_format(out_dir, fmt, ledger, recon):
+    def dump(name, rows):
+        with open(os.path.join(out_dir, name), "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            w.writeheader()
+            w.writerows(rows)
+    dump(f"ledger_{fmt}.csv", ledger)
+    dump(f"settlements_{fmt}.csv", recon)
+
+
+def _write_format_truth(out_dir, truth_rows):
+    with open(os.path.join(out_dir, "ground_truth_formats.csv"), "w",
+              newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(truth_rows[0].keys()))
+        w.writeheader()
+        w.writerows(truth_rows)
 
 
 def _summary(labels, ledger_rows, recon_rows):

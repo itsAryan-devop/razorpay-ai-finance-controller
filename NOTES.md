@@ -272,7 +272,7 @@ A friend is also applying, on **T2 Risk Manager** — abuse-ring/RTO detection f
 **Implication:** reinforces T4 over T2 (avoid near-duplicate submission from the same account pool). Reinforces urgency — he's already at "working evaluated model," we're still choosing a track. **Steal the transferable principle: causal/as-of feature computation applies directly to T4's reconciliation matcher too — must not leak future settlement data into features.** Adopt his freeze-then-polish pacing: stop coding with ~5-6 days of buffer left for README/video.
 
 ---
-*Last updated: 2026-09-04*
+*Last updated: 2026-09-05*
 
 ### Reviewed: Krish Naik "8hr RAG Marathon" video (2026-09-04) — nothing adoptable
 Went through the real content (materials doc + GitHub repo d-hackmt/8hr-MARATHON + the Guardrails/LLM-Gateway/Evals/Observability docs verbatim). It's a RAG chatbot course (Qdrant, FlashRank, LangGraph, RAGAS). Verdict: nothing to adopt for our deterministic finance-reconciliation agent — the cross-cutting concepts (guardrails, gateway, evals, observability) are either chatbot/RAG-specific (topic guards, retrieved-context evals, distributed tracing across FastAPI/Qdrant) or things we already built at the correct scope (verify-guard at the gate, mini provider-gateway w/ fallback+cost, held-out+guard-catch eval, homegrown decision-trace). Only recurring candidate = LLM response caching (Portkey) — still marginal for our 3-case tail, skipped. Net: the course independently validates our design principles; no changes made.
@@ -283,10 +283,31 @@ GitHub now has DOZENS of public Track-04 reconciliation submissions (deadline ~1
 ### Added: many-to-one batch settlement matching + cp1252 root fix (2026-09-04)
 Closed the top competitor-gap from research/06 (subset-sum many-to-one), additively — seed-42 core untouched. `matcher.subset_sum_match()` + `match_batch_settlements()` on a separate `*_batch.csv` fixture (BATCH_SEED, spaced dates): 4/5 lump credits resolved, 1 ambiguous escalated (two subsets sum equal → defer, not guess), 0 wrong. New dashboard panel + CLI leg + RESULTS section. Also root-fixed the recurring ₹ cp1252 crash: `obs.enable_utf8_stdout()` at the CLI entrypoint → CLI and UI now show identical ₹ figures. 57→64 tests, all gates green.
 
+### ✅ Format-level held-out DONE (2026-09-05) — competitor gap #1 closed, additively
+Built the format analogue of the seed held-out (rival deepthi1884's edge). `generate_formats()`
+renders the SAME misattribution pairing task in 5 bank-narration formats (1 seen `NEFT/{code}` +
+4 unseen: lowercase / char-spaced / delimiter-split / name-only), own seed + own `*_formats.csv`
+— seed-42 core byte-for-byte intact (0.976 / 8-11 / calibration identical, 64 core tests green).
+`src/eval_formats.py` (standalone CLI + new CI gate, like eval_holdout/eval_guard) runs the real
+pipeline per format with strict/normalized/LLM readers. **Result: as-tuned reader 0.25 mean recall
+on unseen formats → shipped normalized reader 0.75, 0 wrong.** Real finding surfaced + fixed: the
+verify-guard's case-sensitive `_similarity` would have REJECTED a correct LLM pick on any unseen
+format (nullifying the LLM there) — fixed with `_norm()` (casefold+strip separators), proven a
+no-op on the seen format. **Honest framing (not spun as an LLM win):** for code-embedded formats a
+normalized deterministic reader generalizes on its own (rules-first validated); `name_only` (no
+code) correctly escalates all 12 (needs richer LLM context = costed future work). Tests 64→**72**,
+all gates PASS. Full detail LOG.md 2026-09-05.
+⚠️ NOTE the divergence from the picked framing: this proves the DETERMINISTIC reader generalizes,
+NOT "LLM value concentrated on unseen formats" — the more honest (and stronger) claim. Surfaced to
+Aryan.
+
 ## ▶ NEXT FEATURES TO BUILD (agreed 2026-09-04, for the next chat)
 Context: research/06 competitor scan found we lead on production discipline but 2 rivals lead on reconciliation DEPTH. We've since closed subset-sum many-to-one, calibration, ₹-attribution, wrong-match count. THREE gaps remain; decision = build 2, 3rd optional. Build ADDITIVELY (separate fixture + separate leg, like the batch feature) so the 64-test green core stays byte-for-byte intact.
 
-1. **Format-level held-out (BUILD FIRST — cheapest, highest rigor/effort).** Today `eval_holdout.py` varies the SEED (same schema). Add a held-out that varies the bank-narration FORMAT (layouts/styles the rules were never tuned on) and show the LLM's value is concentrated there (competitor deepthi1884: "+15 pts on unseen formats, +0 on known"). Builds on existing held-out infra. Low risk.
+1. ~~**Format-level held-out (BUILD FIRST).**~~ ✅ **DONE 2026-09-05** (see entry above). Built,
+   green, gated. Honest outcome differs from the hoped framing: the normalized DETERMINISTIC reader
+   generalizes across code-embedded formats (LLM not required there); LLM value stays on the
+   ambiguous tail. Stronger/more honest than "LLM +15 on unseen".
 2. **Three-way reconciliation (BUILD SECOND — highest impact).** Today two-way (ledger vs settlement). Add a BANK-STATEMENT leg: bank statement (what hit the account) vs settlement report (what Razorpay says settled) vs ledger (what merchant expected). Matches Razorpay's own "multi-source reconciliation" direction. Do it as a SEPARATE leg (new *_bank.csv fixture) so core is untouched. Med-high effort.
 3. **NL Settlement Q&A (OPTIONAL — only if time).** Natural-language questions over results ("how much settled last week / which orders never settled"). A named Razorpay direction, demoable — BUT opens a new free-text LLM surface (new injection surface, needs its own guardrails) and mildly tensions our bounded/no-free-chat positioning. Read-only over already-computed results is the safe framing.
 
