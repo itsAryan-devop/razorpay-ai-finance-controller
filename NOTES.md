@@ -273,3 +273,6 @@ A friend is also applying, on **T2 Risk Manager** — abuse-ring/RTO detection f
 
 ---
 *Last updated: 2026-09-04*
+
+### Reviewed: Krish Naik "8hr RAG Marathon" video (2026-09-04) — nothing adoptable
+Went through the real content (materials doc + GitHub repo d-hackmt/8hr-MARATHON + the Guardrails/LLM-Gateway/Evals/Observability docs verbatim). It's a RAG chatbot course (Qdrant, FlashRank, LangGraph, RAGAS). Verdict: nothing to adopt for our deterministic finance-reconciliation agent — the cross-cutting concepts (guardrails, gateway, evals, observability) are either chatbot/RAG-specific (topic guards, retrieved-context evals, distributed tracing across FastAPI/Qdrant) or things we already built at the correct scope (verify-guard at the gate, mini provider-gateway w/ fallback+cost, held-out+guard-catch eval, homegrown decision-trace). Only recurring candidate = LLM response caching (Portkey) — still marginal for our 3-case tail, skipped. Net: the course independently validates our design principles; no changes made.
