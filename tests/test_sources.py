@@ -27,8 +27,19 @@ def test_pipeline_metrics_identical_via_sqlite(tmp_path):
     assert a["pairing"] == b["pairing"]
 
 
-def test_production_stubs_fail_loudly():
-    with pytest.raises(NotImplementedError):
-        sources.RazorpaySettlementsSource("k", "s").load_settlements()
+def test_ledger_stub_fails_loudly():
     with pytest.raises(NotImplementedError):
         sources.SqlLedgerSource("dsn", None).load_ledger()
+
+
+def test_razorpay_settlements_source_fails_loudly_without_the_binary(monkeypatch):
+    """RazorpaySettlementsSource is REAL (calls the actual razorpay-mcp-server via MCP),
+    not a stub — but the binary is a gitignored, checksum-verified download (tools/),
+    never committed, so it is genuinely absent in CI (and this test forces that case
+    regardless of what's on the machine running it, e.g. a dev box that fetched the
+    binary). It must fail loudly (McpUnavailable), never silently return an empty list
+    that could be mistaken for 'no settlements'."""
+    import mcp_client
+    monkeypatch.setattr(mcp_client, "EXE_PATH", "Z:\\definitely\\not\\a\\real\\path.exe")
+    with pytest.raises(mcp_client.McpUnavailable):
+        sources.RazorpaySettlementsSource("k", "s", year=2026, month=8).load_settlements()

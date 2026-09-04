@@ -17,9 +17,13 @@ Concrete adapters:
                   the ledger comes from the merchant's own system, the settlements
                   from Razorpay — two different systems reconciled against each other)
 
-Production stubs (documented, deliberately not wired — this is the seam):
-  SqlLedgerSource            would query the merchant's orders DB
-  RazorpaySettlementsSource  would page the Razorpay settlement recon report
+  RazorpaySettlementsSource  REAL as of 2026-09-04: calls the official
+                  razorpay-mcp-server over MCP (src/mcp_client.py). Confirmed live
+                  against the real API — see tools/README.md for empirical findings.
+
+Production stub (documented, deliberately not wired — this is the seam):
+  SqlLedgerSource            would query the merchant's own orders DB — not a
+                  Razorpay concept, so there's no equivalent official tool to wire.
 """
 import csv
 import os
@@ -152,25 +156,50 @@ class SqlLedgerSource(LedgerSource):
 
 
 class RazorpaySettlementsSource(SettlementSource):
-    """PRODUCTION STUB. In a real deployment this pages the Razorpay settlement recon
-    report (`/v1/settlements/recon/combined`, or the SDK's settlement APIs — equivalently,
-    the `fetch_settlement_recon_details` tool on the official `razorpay-mcp-server`,
-    github.com/razorpay/razorpay-mcp-server, verified present in its 45-tool README as of
-    2026-08-28) for a settlement id / cycle and maps Razorpay's fields onto SETTLEMENT_COLS:
-        id->settlement_id, utr->settlement_utr, entity_id/payment_id->entity_id,
-        type (payment|refund|adjustment), amount/fee/tax/credit/debit, settled_at,
-        on_hold/on_hold_until (timing), order_id, method, description (bank narration).
-    Left unwired on purpose — deliberately deferred (see ARCHITECTURE.md §8), blocked on
-    fresh rzp_test_ credentials + a Go toolchain/binary, neither present when checked.
-    NOTE: test-mode settlements never populate regardless (pre-KYC — see LOG.md), so this
-    needs a KYC-activated account either way; the CSV/SQLite path is the demo."""
+    """REAL (as of 2026-09-04) — no longer a stub. Calls the official
+    `razorpay-mcp-server` (github.com/razorpay/razorpay-mcp-server, checksum-verified
+    binary in tools/, see tools/README.md) over MCP stdio, tool `fetch_settlement_recon_details`,
+    and maps Razorpay's response fields onto SETTLEMENT_COLS. Empirically confirmed
+    live against the real API with real rzp_test_ credentials: `fetch_all_payments`
+    returns genuine captured test payments (e.g. pay_TTk0Us... — the same payment ID
+    from the original day-1 spike); `fetch_settlement_recon_details` returns
+    `{"count":0,"items":[]}` in test mode — RE-CONFIRMING, via the official tool this
+    time (not just the raw SDK), that test-mode settlements never populate (pre-KYC
+    gating — see LOG.md). So this path is real and working, but will return an empty
+    list against a test-mode account either way; a KYC-activated account is what would
+    actually populate it, not more code here. The exact field mapping for a NON-EMPTY
+    settlement item is Razorpay's documented recon schema, best-effort via `.get()` —
+    it could not be empirically verified against real populated data for the reason
+    above, and that gap is stated honestly rather than claimed as verified."""
 
-    def __init__(self, key_id: str, key_secret: str):
+    def __init__(self, key_id: str, key_secret: str, year: int, month: int):
         self.key_id = key_id
         self.key_secret = key_secret
+        self.year, self.month = year, month
 
     def load_settlements(self) -> list[dict]:
-        raise NotImplementedError(
-            "Wire to Razorpay: client.settlement.all()/recon report, paginate on\n"
-            "`count`/`skip`, map fields onto SETTLEMENT_COLS, handle rate limits + retries\n"
-            "(see net.with_retries). Requires a KYC-activated (non-test) account.")
+        import mcp_client
+        with mcp_client.RazorpayMcpClient(self.key_id, self.key_secret) as client:
+            data = client.call_tool("fetch_settlement_recon_details",
+                                    {"year": self.year, "month": self.month})
+        return [self._map_row(item) for item in data.get("items", [])]
+
+    @staticmethod
+    def _map_row(item: dict) -> dict:
+        """Best-effort mapping to SETTLEMENT_COLS — see class docstring for the
+        unverified-against-real-data caveat."""
+        return {
+            "entity_id": item.get("entity_id") or item.get("payment_id", ""),
+            "type": item.get("type", "payment"),
+            "amount": item.get("amount", 0),
+            "fee": item.get("fee", 0),
+            "tax": item.get("tax", 0),
+            "credit": item.get("credit", 0),
+            "debit": item.get("debit", 0),
+            "settlement_id": item.get("id") or item.get("settlement_id", ""),
+            "settlement_utr": item.get("utr", ""),
+            "settled_at": item.get("settled_at", ""),
+            "order_id": item.get("order_id", ""),
+            "method": item.get("method", ""),
+            "description": item.get("description", ""),
+        }

@@ -11,12 +11,12 @@
 flowchart TD
     subgraph Ingestion["Ingestion seam (sources.py)"]
         L[SqlLedgerSource\nmerchant orders DB]:::stub
-        R[RazorpaySettlementsSource\nsettlement recon API]:::stub
+        R[RazorpaySettlementsSource\nreal MCP call, empty in test mode]:::real
         C[CsvSource / SqliteSource\ndemo fixtures]:::real
     end
     C --> M
     L -.-> M
-    R -.-> M
+    R --> M
     M[Deterministic matcher\nNO LLM — code does the math]:::real
     M -->|matched| OK[Clean matches]
     M -->|residue| Q[Typed exception queue]
@@ -59,7 +59,7 @@ arithmetic a ledger.
 
 | Concern | Today (built & tested) | Production target | Gap size |
 |---|---|---|---|
-| Ingestion | CSV / SQLite adapters behind a `ReconciliationSource` interface | `RazorpaySettlementsSource` (recon API, paginated) + `SqlLedgerSource` (merchant DB) | **Small** — the interface exists; fill the two stubs |
+| Ingestion | CSV / SQLite adapters + a REAL `RazorpaySettlementsSource` (live MCP calls, verified against the real API — empty in test mode, pre-KYC) | `SqlLedgerSource` (merchant DB — not a Razorpay concept, no vendor tool to wire) | **Small** — one stub left, and it's inherently merchant-specific |
 | Storage | SQLite (real, queryable) + JSONL audit log | Postgres (connection-string swap) + audit log in an append-only table / WORM store | **Small–medium** |
 | Runtime | CLI batch + Streamlit UI | Scheduled per-cycle batch job (Airflow/cron) + a thin API for on-demand | **Medium** |
 | Scale | in-memory, 239 records in ~1 ms | bucketed + incremental for 10⁵–10⁶ lines/cycle (see §5) | **Medium** |
@@ -118,8 +118,12 @@ arithmetic a ledger.
 - **Kubernetes / message queues / microservice split** — over-engineering for a solo,
   single-merchant reconciler; half-built distributed infra reads as cargo-culting and is
   worse than an honest monolith with a clear scaling path.
-- **Live settlement integration** — test-mode settlements are KYC-gated and never populate
-  (verified day-1 spike, see [LOG.md](LOG.md)); it needs an activated account, not more code.
+- **Populated live settlement data** — the integration itself is built and verified
+  (`RazorpaySettlementsSource` makes real MCP calls against the real API, confirmed
+  2026-09-04); test-mode settlements are KYC-gated and never populate regardless
+  (re-confirmed via the official tool, not just the day-1 raw-SDK spike — see
+  [LOG.md](LOG.md)). This needs an activated account, not more code — the code path
+  is done and correctly returns an empty list rather than fabricating data.
 - **Postgres wiring / multi-tenant auth** — documented as the next step (compose has the
   commented service), not shipped half-done.
 - **Live `razorpay-mcp-server` wiring** — deliberately researched then deferred (2026-08-28),

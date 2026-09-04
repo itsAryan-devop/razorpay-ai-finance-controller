@@ -256,6 +256,9 @@ Deadline **5 Sep 2026**. Tracked in memory too ([[razorpay-remaining-tasks]]).
 
 _Optional dev niceties (not blockers): add `ANTHROPIC_API_KEY` to `.env` to also exercise the paid path; iterative UI polish._
 
+### ✅ razorpay-mcp-server wired in for real (2026-09-04) — task #11 CLOSED
+Aryan generated fresh `rzp_test_` keys and gave them directly (saved straight to `.env`, gitignored, verified never touched by git or bash history). Downloaded the official binary via `gh release download`, SHA256-verified against Razorpay's own checksums file before running anything. `src/mcp_client.py` (new, minimal MCP stdio client) + `src/sources.py`'s `RazorpaySettlementsSource` is now REAL (not a stub) — genuinely calls the official tool over MCP. **Live-confirmed twice, independently**: `fetch_all_payments` returned the exact same real payment ID from the original day-1 spike; `fetch_settlement_recon_details` returned `{"count":0,"items":[]}` — re-confirming (via the vendor's own tool this time) that test-mode settlements never populate, a data-side KYC gate, not a code gap. 44→**50 tests**, all pass. Full detail + a real Python gotcha we hit and fixed (def-time vs call-time default arguments) in LOG.md.
+
 **Aryan action items when back:**
 1. (optional) add `ANTHROPIC_API_KEY` to `.env` + `py src/pipeline.py` to see the real-LLM path.
 2. Decide: push repo to GitHub (public repo is the submission — needs a remote; I did NOT create one, that's an external publish action for you to approve).
@@ -269,4 +272,4 @@ A friend is also applying, on **T2 Risk Manager** — abuse-ring/RTO detection f
 **Implication:** reinforces T4 over T2 (avoid near-duplicate submission from the same account pool). Reinforces urgency — he's already at "working evaluated model," we're still choosing a track. **Steal the transferable principle: causal/as-of feature computation applies directly to T4's reconciliation matcher too — must not leak future settlement data into features.** Adopt his freeze-then-polish pacing: stop coding with ~5-6 days of buffer left for README/video.
 
 ---
-*Last updated: 2026-08-28*
+*Last updated: 2026-09-04*

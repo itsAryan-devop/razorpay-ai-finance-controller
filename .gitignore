@@ -22,3 +22,7 @@ data/generated/
 Thumbs.db
 .vscode/
 .idea/
+
+# Downloaded third-party binary (fetched per tools/README.md instructions, checksum-
+# verified against the official release — not committed; tools/README.md itself IS tracked)
+tools/razorpay-mcp-server/
