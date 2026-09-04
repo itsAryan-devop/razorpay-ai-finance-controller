@@ -173,7 +173,7 @@ tab_dash, tab_queue, tab_audit, tab_trace = st.tabs(
 
 # ============================================================================ DASHBOARD
 with tab_dash:
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Classification accuracy", f"{m['accuracy']:.3f}",
               help=f"{m['correct']}/{m['total']} entities classified with the correct "
                    "exception type. Deliberately < 1.0 — see the honesty note below.")
@@ -184,9 +184,57 @@ with tab_dash:
     c3.metric("Misattribution pairing", f"{pr['after']}/{pr['total']}",
               delta=f"+{pr['after'] - pr['before']} vs rules ({pr['before']}/{pr['total']})",
               help="Ambiguous credits the rules escalated, then the handler resolved.")
-    c4.metric("Throughput", f"{result['throughput']:,.0f} rec/s",
+    # Reported as an ABSOLUTE count, never averaged into an accuracy that would hide it:
+    # one confidently wrong pairing is a different failure from an honest escalation.
+    c4.metric("Wrong matches", pr["wrong_after"],
+              delta="none" if pr["wrong_after"] == 0 else "REVIEW",
+              delta_color="normal" if pr["wrong_after"] == 0 else "inverse",
+              help="Pairings the agent asserted that are WRONG per the answer key. "
+                   "Absolute count, never averaged away — a wrong match costs more "
+                   "than an admitted exception.")
+    c5.metric("Throughput", f"{result['throughput']:,.0f} rec/s",
               help=f"{result['n_records']} records reconciled in "
                    f"{result['elapsed'] * 1000:.1f} ms (in-memory deterministic matcher).")
+
+    # ---- the rupee view: reconciliation is about money, not row counts ----
+    st.divider()
+    st.markdown("#### Money impact — every rupee attributed")
+    mi = result["money"]
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("Ledger value", rupees(mi["total_ledger"]),
+              help="Total value of captured orders in the merchant's own books.")
+    r2.metric("Tied to a settlement", rupees(mi["settled_value"]),
+              help=f"{mi['settled_orders']} orders matched to settlement money.")
+    r3.metric("Never settled", rupees(mi["never_settled_value"]),
+              help=f"{mi['never_settled_orders']} orders captured but never settled — "
+                   "money the merchant is owed and has not received.")
+    r4.metric("Unattributed", rupees(mi["unattributed_value"]),
+              delta="reconciles" if mi["unattributed_value"] == 0 else "GAP",
+              delta_color="normal" if mi["unattributed_value"] == 0 else "inverse",
+              help="Residual: ledger value minus settled minus never-settled. MUST be "
+                   "zero. Reported rather than asserted, so a future bug surfaces as a "
+                   "number instead of hiding.")
+    st.caption(
+        f"Unexplained credits: **{rupees(mi['unexplained_value'])}** across "
+        f"{mi['unexplained_credits']} orphan credits (money that arrived with no ledger "
+        "order behind it). Every rupee of the ledger splits into exactly one bucket — "
+        "settled or never-settled — with an unattributed residual of "
+        f"{rupees(mi['unattributed_value'])}.")
+
+    # ---- is a stated confidence worth anything? ----
+    st.divider()
+    st.markdown("#### Confidence calibration — graded, not asserted")
+    cal = pd.DataFrame([{
+        "band": c["band"], "range": c["range"], "n": c["n"],
+        "gradeable": c["gradeable"], "correct": c["correct"],
+        "empirical accuracy": "n/a" if c["accuracy"] is None else f"{c['accuracy']:.2f}",
+    } for c in result["calibration"]]).set_index("band")
+    st.dataframe(cal, use_container_width=True)
+    st.caption("A confidence number nobody checks is decoration. Each band is scored "
+               "against the ground-truth answer key, so the routing thresholds "
+               "(AUTO_RESOLVE ≥ 0.75, FLAG ≥ 0.45) are justified by measured accuracy "
+               "rather than asserted. Ungradeable rows are excluded, never counted as "
+               "wins — an empty band reads `n/a`, not a fabricated 1.00.")
 
     st.divider()
     left, right = st.columns([3, 2])

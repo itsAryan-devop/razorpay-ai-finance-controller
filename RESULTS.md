@@ -18,7 +18,12 @@ from real test payments — see LOG.md). Seed 42, reproducible.
 | classification accuracy | **0.976** (120/123) | correct exception TYPE per entity |
 | reconciliation match rate | **0.911** (102/112) | ledger orders tied to a settlement (10 genuinely missing) |
 | misattribution pairing | **8/11 auto-correct, 3 escalated** | which credit belongs to which order, under amount collisions |
+| **wrong matches** | **0** | pairings asserted-and-wrong. Absolute count, never averaged |
 | routing | AUTO 120 · ESCALATE 3 | ambiguous cases deferred, not guessed |
+
+`wrong matches` is deliberately kept out of the accuracy average. A confidently wrong
+pairing and an honest escalation are different failures — averaging them into one number
+hides the only one that actually moves money to the wrong place.
 
 Per-class precision/recall: CLEAN, TIMING_VARIANCE, FEE_MISMATCH, REFUND_IN_LATER_CYCLE,
 DUPLICATE, MISSING_CREDIT, MISATTRIBUTED_CREDIT all **1.00 / 1.00**.
@@ -74,6 +79,39 @@ headline is a conservative number, not a cherry-picked easy one. `match_rate` is
 every seed because the exception-mix proportions are fixed, so the missing-credit count is
 structural, not random. Reproduce: `py src/eval_holdout.py` (a CI gate fails the build if
 held-out mean accuracy drops below 0.95).
+
+## Money impact — every rupee attributed
+Reconciliation is about money, not row counts. The rupee view of the seed-42 run
+(`py src/pipeline.py`, or the Money-impact panel on the dashboard):
+
+| bucket | value | detail |
+|---|---|---|
+| ledger value | **₹281,973.00** | total captured orders in the merchant's books |
+| tied to a settlement | **₹251,431.00** | 102 orders matched to settlement money |
+| never settled | **₹30,542.00** | 10 orders captured but never settled — money owed |
+| **unattributed residual** | **₹0.00** | must be zero |
+| unexplained credits | ₹15,692.00 | 8 orphan credits, no ledger order behind them |
+
+Every rupee of the ledger splits into exactly one bucket — settled or never-settled. The
+residual is **reported rather than asserted away**, so a future bug surfaces as a number
+instead of hiding; `test_report_metrics.py` enforces that it stays exactly zero, and that
+every figure remains an integer (paise), because a reconciler must never float money.
+
+## Confidence calibration — graded, not asserted
+A confidence score nobody checks is decoration. Every handler decision is bucketed by its
+confidence band and scored against the ground-truth answer key, so the routing thresholds
+are justified by measured accuracy rather than claimed:
+
+| band | range | n | gradeable | correct | empirical accuracy |
+|---|---|---|---|---|---|
+| AUTO_RESOLVE | ≥ 0.75 | 1 | 1 | 1 | **1.00** |
+| FLAG | 0.45 – 0.75 | 2 | 2 | 2 | **1.00** |
+| ESCALATE | < 0.45 | 0 | 0 | 0 | n/a |
+
+Decisions that cannot be graded (entity absent from the answer key) are **excluded from
+the accuracy, never counted as wins** — an empty band reads `n/a`, not a fabricated
+`1.00`. This is the table most reconciliation tools structurally cannot produce, because
+they have no known-correct answer to check a confidence against.
 
 ## Reliability (pass^k) — determinism is the feature
 For a money agent the right reliability question is pass^k: does it give the same correct

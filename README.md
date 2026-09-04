@@ -16,12 +16,30 @@ Every money-affecting decision is **explainable, bounded, and gated**.
 ## Headline results (deterministic baseline + handler)
 *Reproduce: `py src/generate_data.py && py src/matcher.py && py src/pipeline.py`*
 
-| metric | value |
-|---|---|
-| classification accuracy | **0.976** (120/123) |
-| reconciliation match rate | **0.911** (102/112 orders tied to a settlement) |
-| misattribution pairing (rules → +handler) | **8/11 → 11/11** |
-| routing | deterministic escalates ambiguity; handler auto-applies only high-confidence |
+| metric | dev seed (42) | held-out (4 unseen seeds) |
+|---|---|---|
+| classification accuracy | **0.976** (120/123) | **0.992** mean (0.984 min) |
+| reconciliation match rate | **0.911** (102/112 orders tied to a settlement) | 0.911 (structural) |
+| misattribution pairing (rules → +handler) | **8/11 → 11/11** | — |
+| **wrong matches** | **0** | **0** |
+| routing | deterministic escalates ambiguity; handler auto-applies only high-confidence | |
+
+**The dev seed is the *hardest* of the five** — most colliding credits, most escalations —
+so the headline is the conservative number, not a cherry-picked one. `wrong matches` is an
+**absolute count, never averaged into an accuracy figure**: a confidently wrong pairing is
+a different kind of failure from an honest escalation, and averaging the two hides exactly
+the number that matters for money. Reproduce the held-out column: `py src/eval_holdout.py`.
+
+**Every rupee is attributed.** Of **₹281,973.00** in the ledger: **₹251,431.00** tied to a
+settlement (102 orders), **₹30,542.00** never settled (10 orders — money the merchant is
+owed), **unattributed residual ₹0.00**. Plus **₹15,692.00** across 8 orphan credits that
+arrived with no ledger order behind them. The residual is *reported, not asserted away*, so
+a future bug surfaces as a number instead of hiding — and a test enforces it stays zero.
+
+**Confidence is graded, not asserted** — every handler decision is bucketed by confidence
+band and scored against the answer key, so the routing thresholds are justified by measured
+accuracy. Ungradeable rows are excluded rather than counted as wins (an empty band reads
+`n/a`, never a fabricated `1.00`).
 
 The accuracy is deliberately **not** 100%. On self-generated data a perfect score would
 just prove the matcher inverts the generator — a tell, not an achievement. The honest
@@ -73,7 +91,7 @@ py src/pipeline.py           # end-to-end: matcher → handler → before/after 
 py src/pipeline.py --execute # apply high-confidence auto-resolutions (gated)
 py src/eval_guard.py         # reproducible guard-safety metric vs a worst-case adversarial model
 py src/demo_refusals.py      # scripted demo: 4 out-of-policy actions, all refused
-pytest -q                    # 44 tests (adversarial LLM-guard suite + policy-refusal suite)
+pytest -q                    # 57 tests (adversarial guard, policy refusals, money attribution)
 streamlit run app.py         # dashboard + exception queue + audit viewer + LLM trace
 ```
 The LLM path activates when a provider is available; otherwise a transparent
@@ -100,9 +118,12 @@ chain.
 ## UI (Streamlit)
 `app.py` is a thin, honest read-layer over the same engine — it runs `pipeline.run()`
 **in-process on every render**, so every number on screen is recomputed live, never
-hardcoded. Three views:
+hardcoded. Four views:
 - **Dashboard** — headline metrics (accuracy, match rate, misattribution pairing before→after,
-  throughput), the exception mix, per-class precision/recall, and the EXTRA_CREDIT queue
+  **wrong matches as an absolute count**, throughput), the **money-impact panel** (ledger value
+  split into settled / never-settled with an unattributed residual of ₹0.00), the
+  **confidence-calibration table** (empirical accuracy per band, graded against the answer
+  key), the exception mix, per-class precision/recall, and the EXTRA_CREDIT queue
   precision lift (0.73 → 1.00 after the handler pairs the colliding credits).
 - **Exception queue** — the typed queue, filterable by type and route, plus the
   escalated→handler decisions with their confidence and justification.
@@ -196,8 +217,9 @@ src/obs.py  src/net.py JSON structured logging · bounded-backoff retries
 app.py                 Streamlit UI: dashboard · exception queue · audit viewer
 Dockerfile  docker-compose.yml   reproducible image (CI builds it every push)
 src/eval_guard.py      reproducible guard-safety metric vs a worst-case adversarial model
+src/report_metrics.py  confidence calibration - rupee attribution - wrong-match count
 src/demo_refusals.py   scripted on-camera demo: 4 out-of-policy actions, all refused
-tests/                 44 pytest cases (adversarial LLM guard + policy refusals) in CI
+tests/                 57 pytest cases (adversarial guard, policy refusals, money attr.) in CI
 ARCHITECTURE.md        components · current-vs-target · scaling · failure modes
 NOTES.md PLAN.md LOG.md RESULTS.md   context, roadmap, failure trail, metrics
 research/              the research reports the design is grounded in (incl. Razorpay's

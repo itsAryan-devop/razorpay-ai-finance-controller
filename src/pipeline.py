@@ -28,6 +28,7 @@ import matcher
 import llm_handler
 import audit
 import obs
+import report_metrics
 
 AUDIT_PATH = os.path.join(matcher.D, "audit_log.jsonl")
 log = obs.get_logger("recon.pipeline")
@@ -43,11 +44,17 @@ def _true_ghosts():
 
 
 def _pairing_stats(results, truth_ghosts):
+    """Returns (total, correct, escalated, wrong).
+
+    `wrong` is reported as an ABSOLUTE COUNT, never folded into an accuracy average:
+    for a money system a confidently wrong pairing is a different kind of failure from
+    an honest escalation, and averaging the two hides exactly the number that matters.
+    """
     mis = [r for r in results if r.entity_id in truth_ghosts]
     resolved = [r for r in mis if r.matched_entity]
     correct = sum(1 for r in resolved if r.matched_entity == truth_ghosts[r.entity_id])
     escalated = sum(1 for r in mis if not r.matched_entity)
-    return len(mis), correct, escalated
+    return len(mis), correct, escalated, len(resolved) - correct
 
 
 def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
@@ -79,12 +86,12 @@ def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
     throughput = n_records / elapsed if elapsed > 0 else 0.0
 
     metrics_before = matcher.compute_metrics(results, truth)
-    _, corr_before, esc_before = _pairing_stats(results, truth_ghosts)
+    _, corr_before, esc_before, wrong_before = _pairing_stats(results, truth_ghosts)
 
     handler_records = llm_handler.resolve_escalations(results, ledger, recon,
                                                       provider=provider)
     engine = handler_records[0]["engine"] if handler_records else "n/a"
-    n_mis, corr_after, esc_after = _pairing_stats(results, truth_ghosts)
+    n_mis, corr_after, esc_after, wrong_after = _pairing_stats(results, truth_ghosts)
 
     # Post-handler, credits the handler paired to an order are no longer "unexplained
     # money": recompute EXTRA_CREDIT precision excluding them (closes the Day-7 loose end).
@@ -93,6 +100,11 @@ def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
     ec_after, ec_tp_after, ec_pred_after = matcher.extra_credit_precision(
         results, truth, resolved_credits)
     ec_reclassified = metrics_before["extra_credit_predicted"] - ec_pred_after
+
+    # Is a stated confidence worth anything? Grade each band against the answer key.
+    calibration = report_metrics.confidence_calibration(handler_records, truth_ghosts)
+    # The rupee view: reconciliation is about money, not row counts.
+    money = report_metrics.money_impact(results, ledger, recon, resolved_credits)
 
     # ---- GUARDRAILS: gate every decision, then (optionally) commit a tamper-evident entry.
     # BOUNDED/GATED: only high-confidence AUTO_RESOLVE may auto-apply, and only in EXECUTE.
@@ -128,7 +140,10 @@ def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
         "engine": engine,
         "metrics": metrics_before,
         "pairing": {"total": n_mis, "before": corr_before, "after": corr_after,
-                    "escalated_before": esc_before, "escalated_after": esc_after},
+                    "escalated_before": esc_before, "escalated_after": esc_after,
+                    "wrong_before": wrong_before, "wrong_after": wrong_after},
+        "calibration": calibration,
+        "money": money,
         "extra_credit_after": {"precision": ec_after, "tp": ec_tp_after,
                                "predicted": ec_pred_after,
                                "reclassified": ec_reclassified},
@@ -167,11 +182,17 @@ def main(dry_run=True, cycle="adhoc", reset_audit=False):
         "audit_entries": r["audit"]["count"], "audit_ok": r["audit"]["ok"]}})
     p = r["pairing"]
     print(f"BEFORE handler (deterministic): {p['before']}/{p['total']} misattributions "
-          f"paired correctly, {p['escalated_before']} escalated")
+          f"paired correctly, {p['escalated_before']} escalated, "
+          f"{p['wrong_before']} WRONG")
     print(f"AFTER  handler ({r['engine']}): {p['after']}/{p['total']} paired correctly, "
-          f"{p['escalated_after']} still escalated")
+          f"{p['escalated_after']} still escalated, {p['wrong_after']} WRONG")
     print(f"throughput: {r['throughput']:.0f} records/s ({r['n_records']} records "
           f"in {r['elapsed']*1000:.0f} ms)")
+
+    print("\n-- confidence calibration (is a stated confidence worth anything?) --")
+    print(report_metrics.format_calibration(r["calibration"]))
+    print("\n-- money impact --")
+    print(report_metrics.format_money(r["money"]))
 
     extra = f", {r['skipped']} skipped (idempotent)" if r["skipped"] else ""
     print(f"\n[{r['mode']}] cycle={r['cycle']} run={r['run_id']} — "
