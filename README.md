@@ -23,6 +23,7 @@ Every money-affecting decision is **explainable, bounded, and gated**.
 | misattribution pairing (rules → +handler) | **8/11 → 11/11** | — |
 | **wrong matches** | **0** | **0** |
 | batch settlement (many-to-one) | **4/5 resolved · 1 escalated · 0 wrong** | — |
+| three-way tie-out (ledger·Razorpay·bank) | **15/16 classified · 1 escalated · 0 wrong · residual ₹0** | — |
 | routing | deterministic escalates ambiguity; handler auto-applies only high-confidence | |
 
 **The dev seed is the *hardest* of the five** — most colliding credits, most escalations —
@@ -87,6 +88,11 @@ accuracy and an honest exception list.
 Plus a **many-to-one leg**: real settlements pay out a batch of orders in one lump credit,
 reconciled by a bounded **subset-sum search** (ambiguous batches escalate, never guess).
 
+And a **three-way leg**: "Razorpay reported a payout" is not "the money is in my bank." A
+bank-statement leg ties **ledger expected == Razorpay reported == bank received**, joined by
+**UTR**, surfacing money in transit, short bank credits, gateway-withheld funds, and credits
+under a mismatched UTR (escalated). Every reported rupee is attributed with a zero residual.
+
 Design principle (from Razorpay's own engineering blog and the reconciliation literature):
 **the LLM reads; deterministic code does the math.** An LLM must never arithmetic a ledger.
 
@@ -102,8 +108,9 @@ py src/pipeline.py --execute # apply high-confidence auto-resolutions (gated)
 py src/eval_guard.py         # reproducible guard-safety metric vs a worst-case adversarial model
 py src/eval_holdout.py       # seed-level held-out: rules aren't overfit to the seed-42 draw
 py src/eval_formats.py       # format-level held-out: narration reader generalizes across bank formats
+py src/threeway.py           # three-way tie-out: ledger vs Razorpay vs bank statement (by UTR)
 py src/demo_refusals.py      # scripted demo: 4 out-of-policy actions, all refused
-pytest -q                    # 72 tests (adversarial guard, policy refusals, money attr., batch + format held-out)
+pytest -q                    # 79 tests (adversarial guard, refusals, money attr., batch + format + three-way)
 streamlit run app.py         # dashboard + exception queue + audit viewer + LLM trace
 ```
 The LLM path activates when a provider is available; otherwise a transparent
@@ -232,9 +239,10 @@ Dockerfile  docker-compose.yml   reproducible image (CI builds it every push)
 src/eval_guard.py      reproducible guard-safety metric vs a worst-case adversarial model
 src/report_metrics.py  confidence calibration - rupee attribution - wrong-match count
 src/matcher.py         [also] subset-sum many-to-one batch settlement matching
+src/threeway.py        three-way tie-out: ledger vs Razorpay settlement vs bank statement (by UTR)
 src/demo_refusals.py   scripted on-camera demo: 4 out-of-policy actions, all refused
 src/eval_holdout.py    seed-level held-out gate · src/eval_formats.py format-level held-out gate
-tests/                 72 pytest cases (adversarial guard, refusals, money attr., batch + format) in CI
+tests/                 79 pytest cases (adversarial guard, refusals, money attr., batch, format, three-way) in CI
 ARCHITECTURE.md        components · current-vs-target · scaling · failure modes
 NOTES.md PLAN.md LOG.md RESULTS.md   context, roadmap, failure trail, metrics
 research/              the research reports the design is grounded in (incl. Razorpay's

@@ -232,6 +232,7 @@ def generate():
     _summary(labels, ledger_rows, recon_rows)
     generate_batches(OUT_DIR)
     generate_formats(OUT_DIR)
+    generate_threeway(OUT_DIR)
 
 
 def _write(out_dir, ledger_rows, recon_rows, truth_rows):
@@ -433,6 +434,106 @@ def _write_format_truth(out_dir, truth_rows):
         w = csv.DictWriter(f, fieldnames=list(truth_rows[0].keys()))
         w.writeheader()
         w.writerows(truth_rows)
+
+
+# =========================================================================================
+# Three-way reconciliation fixture — add a BANK-STATEMENT leg.
+#
+# The 1:1 core reconciles two legs: the merchant LEDGER (what they expected) vs the Razorpay
+# SETTLEMENT report (what Razorpay says it paid). But "Razorpay says it settled" is not "the
+# money is in my bank" — a settlement UTR can be short-credited, delayed in transit, or never
+# arrive. Real finance teams run a THREE-way tie-out:
+#     ledger expected  ==  settlement reported  ==  bank received   (to the paise, by UTR)
+#
+# This fixture models it at settlement granularity: each payout carries an expected amount
+# (aggregated from the merchant's books), a reported amount (Razorpay), and — in a separate
+# bank statement — what actually credited, joined by UTR. Planted three-way exceptions:
+#   RECONCILED        expected == reported == received (incl. a benign next-day bank posting)
+#   SETTLEMENT_SHORT  Razorpay reported less than the books expected (funds on_hold/withheld)
+#   BANK_MISSING      Razorpay reported a payout but nothing credited the bank (in transit)
+#   BANK_SHORT        bank credited less than Razorpay reported (a bank-side deduction)
+#   UTR_MISMATCH      a bank credit matches by amount+date but under a DIFFERENT UTR -> escalate
+#   BANK_EXTRA        a bank credit with no settlement behind it (unexplained money in)
+#
+# Purely ADDITIVE: independent seed, own *_3way.csv files; the seed-42 core is untouched.
+# =========================================================================================
+THREEWAY_SEED = 71072
+BANK_POST_LAG_OK = 1          # a bank credit posting T+1 vs the settlement date is benign
+
+
+def generate_threeway(out_dir=OUT_DIR):
+    """One self-contained three-way fixture: settlements_3way.csv (expected + reported per
+    payout, with UTR), bank_3way.csv (what actually credited the bank), ground_truth_3way.csv
+    (the per-settlement answer key). Deterministic (THREEWAY_SEED)."""
+    rng = random.Random(THREEWAY_SEED)
+    base_day = dt.date(2026, 7, 8)
+    settlements, bank, truth = [], [], []
+
+    # (label, count). Order is shuffled after building so it isn't positionally guessable.
+    plan = (["RECONCILED"] * 9 + ["SETTLEMENT_SHORT"] * 2 + ["BANK_MISSING"] * 2
+            + ["BANK_SHORT"] * 1 + ["UTR_MISMATCH"] * 1)
+    rng.shuffle(plan)
+
+    for i, label in enumerate(plan):
+        sid = _uid("setl_", rng)
+        utr = str(rng.randint(10**11, 10**12 - 1)) + rng.choice("abcdefgh")
+        settled = base_day + dt.timedelta(days=i + rng.randint(0, 1))
+        expected = rng.randint(500, 8000) * 100          # merchant-booked net for this payout
+        reported = expected                              # Razorpay's reported net (usually ==)
+        posted = settled                                 # bank value date (usually == settled)
+        received = expected                              # what actually credited the bank
+
+        if label == "SETTLEMENT_SHORT":
+            reported = expected - rng.randint(50, 400) * 100     # gateway withheld/on_hold
+            received = reported                                  # bank credits what was reported
+        elif label == "BANK_SHORT":
+            received = reported - rng.randint(10, 90) * 100      # bank-side deduction
+        elif label == "RECONCILED" and rng.random() < 0.4:
+            posted = settled + dt.timedelta(days=BANK_POST_LAG_OK)   # benign next-day posting
+
+        settlements.append({"settlement_id": sid, "settlement_utr": utr,
+                            "expected_net": expected, "reported_net": reported,
+                            "settled_at": settled.isoformat()})
+
+        # the bank leg: most settlements produce a matching credit; some don't
+        if label == "BANK_MISSING":
+            pass                                          # reported, but nothing hit the bank
+        elif label == "UTR_MISMATCH":
+            wrong_utr = str(rng.randint(10**11, 10**12 - 1)) + rng.choice("abcdefgh")
+            bank.append({"utr": wrong_utr, "amount": received,
+                         "value_date": posted.isoformat(), "ref": "NEFT CR"})
+        else:
+            bank.append({"utr": utr, "amount": received,
+                         "value_date": posted.isoformat(), "ref": "NEFT CR"})
+
+        truth.append({"settlement_id": sid, "label": label,
+                      "expected_net": expected, "reported_net": reported,
+                      "bank_received": (0 if label == "BANK_MISSING" else received)})
+
+    # one orphan bank credit with no settlement behind it -> BANK_EXTRA (unexplained money in)
+    extra_utr = str(rng.randint(10**11, 10**12 - 1)) + rng.choice("abcdefgh")
+    bank.append({"utr": extra_utr, "amount": rng.randint(500, 3000) * 100,
+                 "value_date": (base_day + dt.timedelta(days=5)).isoformat(),
+                 "ref": "NEFT CR MANUAL"})
+    truth.append({"settlement_id": f"BANK_EXTRA:{extra_utr}", "label": "BANK_EXTRA",
+                  "expected_net": 0, "reported_net": 0,
+                  "bank_received": bank[-1]["amount"]})
+
+    rng.shuffle(bank)                                     # bank statements arrive unordered
+    _write_threeway(out_dir, settlements, bank, truth)
+    print(f"Three-way fixture: {len(settlements)} settlements vs {len(bank)} bank credits "
+          f"(expected/reported/received, joined by UTR) | output in data/generated/*_3way.csv")
+
+
+def _write_threeway(out_dir, settlements, bank, truth):
+    def dump(name, rows):
+        with open(os.path.join(out_dir, name), "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+            w.writeheader()
+            w.writerows(rows)
+    dump("settlements_3way.csv", settlements)
+    dump("bank_3way.csv", bank)
+    dump("ground_truth_3way.csv", truth)
 
 
 def _summary(labels, ledger_rows, recon_rows):

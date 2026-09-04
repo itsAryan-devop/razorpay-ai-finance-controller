@@ -301,6 +301,15 @@ all gates PASS. Full detail LOG.md 2026-09-05.
 NOT "LLM value concentrated on unseen formats" — the more honest (and stronger) claim. Surfaced to
 Aryan.
 
+### ✅ Three-way reconciliation DONE (2026-09-05) — competitor gap #2 closed, additively
+Added a BANK-STATEMENT leg: ledger expected == Razorpay reported == bank received, joined by UTR.
+New `src/threeway.py` + own seed/fixtures (`*_3way.csv`), zero edits to the 1:1 matcher — 72-test
+core byte-for-byte intact. Wired into pipeline.run()+CLI + a new standalone CI gate (0 wrong,
+residual 0). Result: 15/16 classified, 1 escalated (UTR mismatch), 0 wrong, residual ₹0.00; of
+₹71,585 reported → ₹6,474 in transit, ₹55 bank-short, ₹2,515 under a wrong UTR. Framed as exception
+queue + money tie-out (NOT a bare accuracy 1.000 — stays on-brand). Tests 72→**79**, all gates PASS.
+Full detail LOG.md 2026-09-05. **Both agreed features (format held-out + three-way) now DONE.**
+
 ## ▶ NEXT FEATURES TO BUILD (agreed 2026-09-04, for the next chat)
 Context: research/06 competitor scan found we lead on production discipline but 2 rivals lead on reconciliation DEPTH. We've since closed subset-sum many-to-one, calibration, ₹-attribution, wrong-match count. THREE gaps remain; decision = build 2, 3rd optional. Build ADDITIVELY (separate fixture + separate leg, like the batch feature) so the 64-test green core stays byte-for-byte intact.
 
@@ -308,7 +317,9 @@ Context: research/06 competitor scan found we lead on production discipline but 
    green, gated. Honest outcome differs from the hoped framing: the normalized DETERMINISTIC reader
    generalizes across code-embedded formats (LLM not required there); LLM value stays on the
    ambiguous tail. Stronger/more honest than "LLM +15 on unseen".
-2. **Three-way reconciliation (BUILD SECOND — highest impact).** Today two-way (ledger vs settlement). Add a BANK-STATEMENT leg: bank statement (what hit the account) vs settlement report (what Razorpay says settled) vs ledger (what merchant expected). Matches Razorpay's own "multi-source reconciliation" direction. Do it as a SEPARATE leg (new *_bank.csv fixture) so core is untouched. Med-high effort.
+2. ~~**Three-way reconciliation (BUILD SECOND).**~~ ✅ **DONE 2026-09-05** (see entry above).
+   `src/threeway.py`, own `*_3way.csv` fixtures, UTR join, pipeline+CLI wired, CI gate. Both agreed
+   features now complete.
 3. **NL Settlement Q&A (OPTIONAL — only if time).** Natural-language questions over results ("how much settled last week / which orders never settled"). A named Razorpay direction, demoable — BUT opens a new free-text LLM surface (new injection surface, needs its own guardrails) and mildly tensions our bounded/no-free-chat positioning. Read-only over already-computed results is the safe framing.
 
 Priority: 1 → 2 → (3 optional). Launch checklist (GitHub push, video, form) still the real floor — an unsubmitted repo scores zero.

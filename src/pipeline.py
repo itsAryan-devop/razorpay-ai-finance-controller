@@ -29,6 +29,7 @@ import llm_handler
 import audit
 import obs
 import report_metrics
+import threeway
 
 AUDIT_PATH = os.path.join(matcher.D, "audit_log.jsonl")
 log = obs.get_logger("recon.pipeline")
@@ -116,6 +117,11 @@ def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
     else:
         batch = {"total": 0, "correct": 0, "wrong": 0, "escalated": 0, "unmatched": 0}
 
+    # Three-way leg: ledger expected vs Razorpay reported vs bank received, joined by UTR.
+    # Separate *_3way.csv fixture, separate metric — never disturbs the 1:1 numbers. None if
+    # the fixture isn't present, so this is always safe.
+    threeway_out = threeway.run_threeway()
+
     # ---- GUARDRAILS: gate every decision, then (optionally) commit a tamper-evident entry.
     # BOUNDED/GATED: only high-confidence AUTO_RESOLVE may auto-apply, and only in EXECUTE.
     # FLAG/ESCALATE always wait for a human. Dry-run is the default.
@@ -155,6 +161,7 @@ def run(dry_run=True, cycle="adhoc", commit=True, reset_audit=False,
         "calibration": calibration,
         "money": money,
         "batch": batch,
+        "threeway": threeway_out,
         "extra_credit_after": {"precision": ec_after, "tp": ec_tp_after,
                                "predicted": ec_pred_after,
                                "reclassified": ec_reclassified},
@@ -211,6 +218,17 @@ def main(dry_run=True, cycle="adhoc", reset_audit=False):
         print(f"\n-- batch settlement (many-to-one) --\n"
               f"{b['correct']}/{b['total']} lump credits resolved to the correct order-set"
               f" | {b['escalated']} ambiguous escalated | {b['wrong']} WRONG")
+
+    tw = r.get("threeway")
+    if tw:
+        s, m = tw["score"], tw["money"]
+        print(f"\n-- three-way (ledger vs Razorpay vs bank, joined by UTR) --\n"
+              f"{s['total'] - s['escalated']}/{s['total']} records classified"
+              f" | {s['escalated']} escalated (UTR mismatch) | {s['wrong']} WRONG | "
+              f"of {report_metrics.rupees(m['reported_total'])} reported: "
+              f"{report_metrics.rupees(m['in_transit'])} in transit, "
+              f"{report_metrics.rupees(m['bank_short_lost'])} short-credited, "
+              f"residual {report_metrics.rupees(m['residual'])}")
 
     extra = f", {r['skipped']} skipped (idempotent)" if r["skipped"] else ""
     print(f"\n[{r['mode']}] cycle={r['cycle']} run={r['run_id']} — "

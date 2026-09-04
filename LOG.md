@@ -175,6 +175,35 @@ The GitHub competitor scan (research/06) showed the Track-04 field is crowded an
 - Consistency pass across all three surfaces (CLI / Streamlit / docs): dashboard gained a Wrong-matches metric, a Money-impact panel and a calibration table; README headline reframed as **dev vs held-out side by side** with the wrong-match row; RESULTS.md gained both new sections; stale counts fixed (44→57 tests, "Three views"→"Four views"). Verified live in the browser — all panels render, ₹ displays correctly, no console errors.
 - 57 tests pass; held-out generalization gate PASS; guard-safety gate PASS.
 
+## 2026-09-05 — Three-way reconciliation (ledger vs Razorpay vs bank statement, by UTR)
+Second competitor gap from research/06 (rivals adithyaathreya2264 + deepthi1884 both do three-way;
+we did two-way). Built it additively — own seed THREEWAY_SEED, own `*_3way.csv` fixtures, a new
+`src/threeway.py` module (zero edits to the 1:1 matcher), so the 72-test core stayed intact
+(verified 0.976 / 11-11 unchanged).
+- **Why it matters, framed for the pitch:** "Razorpay reported a payout" is not "the money is in
+  my bank." The bank leg catches money the two-way recon structurally can't see — in transit,
+  short-credited, or arriving under a corrected UTR. Join key is the **UTR** (per research/04, the
+  real bank↔settlement join), with an amount+date fallback that ESCALATES on a UTR mismatch rather
+  than auto-accepting it.
+- **`src/threeway.py`**: `reconcile_threeway()` classifies RECONCILED / SETTLEMENT_SHORT / BANK_SHORT
+  / BANK_MISSING / UTR_MISMATCH / BANK_EXTRA from the UTR join; `threeway_money()` attributes every
+  REPORTED rupee to a bucket (landed / in-transit / short / under-wrong-UTR) with a residual forced
+  to 0. Wired into `pipeline.run()` + the CLI (a three-way line like the batch leg) and added as a
+  standalone CI gate (`py src/threeway.py` exits non-zero on any wrong tie-out or nonzero residual),
+  mirroring eval_guard/eval_formats.
+- **Result:** 15/16 records classified, **1 escalated (the planted UTR mismatch), 0 wrong**, residual
+  **₹0.00**. Of ₹71,585 reported settled: ₹62,541 landed & tied, ₹6,474 in transit, ₹55 bank-short,
+  ₹2,515 under a mismatched UTR (escalated); plus ₹531 gateway-withheld vs books and ₹696 unexplained
+  bank credits.
+- **Honesty note (kept on-brand):** the structural three-way exceptions are rule-resolvable so they
+  classify exactly — but the headline is deliberately framed as "records classified + 1 escalated +
+  0 wrong + residual 0 + money tie-out", NOT a bare "accuracy 1.000", because a 100% on self-generated
+  data is a tell. The genuine ambiguity (credit under a different UTR — same payout re-issued, or a
+  different one?) escalates for a human, same rule as the 1:1 and batch legs.
+- Tests **72 → 79** (`tests/test_threeway.py`: fixture integrity, every planted exception classified,
+  UTR-mismatch escalates not auto-matches, money residual 0 + integer paise, benign T+1 posting still
+  reconciles, BANK_MISSING vs UTR_MISMATCH not confused, orphan credit -> BANK_EXTRA). All gates PASS.
+
 ## 2026-09-05 — Format-level held-out (narration reader generalizes across bank formats)
 Competitor scan (research/06) flagged a rival (deepthi1884) holding out by unseen bank-narration
 FORMAT, not just seed — a more rigorous "why does the reader generalize" than our seed-only

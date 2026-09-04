@@ -148,6 +148,48 @@ credit, so amount alone cannot decide. The matcher **escalates it to a human rat
 picking one** — the same "defer, don't fake" rule as the 1:1 leg. Reproduce:
 `py src/matcher.py` (batch line at the end) or `py src/pipeline.py`.
 
+## Three-way reconciliation (ledger vs Razorpay vs bank)
+The 1:1 core ties the merchant ledger to the Razorpay settlement report. But "Razorpay
+reported a payout" is not "the money is in my bank" — a settlement UTR can be short-credited,
+delayed in transit, arrive under a corrected UTR, or never show up. Finance teams close the
+loop with a **three-way tie-out**, joined by **UTR** (the bank reference on a settlement):
+
+    expected (books)  ==  reported (Razorpay)  ==  received (bank)      to the paise
+
+Run on a dedicated `*_3way.csv` fixture (`py src/threeway.py`), separate from the 1:1 core so
+it never perturbs the numbers above. Typed exceptions, all classified deterministically from
+the UTR join:
+
+| exception | meaning | count |
+|---|---|---|
+| RECONCILED | expected == reported == received (benign T+1 bank posting tolerated) | 9 |
+| SETTLEMENT_SHORT | Razorpay reported less than the books expected (funds on_hold/withheld) | 2 |
+| BANK_MISSING | reported, but nothing credited the bank — money in transit | 2 |
+| BANK_SHORT | bank credited less than Razorpay reported (bank-side deduction) | 1 |
+| UTR_MISMATCH | a bank credit matches by amount+date but a **different UTR** → escalated | 1 |
+| BANK_EXTRA | a bank credit with no settlement behind it (unexplained money in) | 1 |
+
+**1 escalated (the UTR mismatch), 0 wrong.** As with the 1:1 and batch legs, the structural
+exceptions are rule-resolvable so they classify exactly; the genuine ambiguity — a credit
+that matches on amount+date but under a *different* UTR — is **escalated for human confirm,
+not auto-accepted** (is it the same payout under a corrected UTR, or a different one?).
+
+**Every reported rupee is attributed** (`threeway_money`, integer paise, residual enforced
+to zero by a test and the CI gate):
+
+| bucket | value |
+|---|---|
+| reported settled | **₹71,585.00** |
+| landed & tied to the bank | ₹62,541.00 |
+| in transit (BANK_MISSING) | ₹6,474.00 |
+| bank short-credited | ₹55.00 |
+| under a mismatched UTR (escalated) | ₹2,515.00 |
+| **residual** | **₹0.00** |
+
+Plus **₹531.00** the gateway withheld versus the books (SETTLEMENT_SHORT) and **₹696.00** of
+unexplained bank credits (BANK_EXTRA). A CI gate (`py src/threeway.py`) fails the build on any
+wrong tie-out or a nonzero residual.
+
 ## Confidence calibration — graded, not asserted
 A confidence score nobody checks is decoration. Every handler decision is bucketed by its
 confidence band and scored against the ground-truth answer key, so the routing thresholds
