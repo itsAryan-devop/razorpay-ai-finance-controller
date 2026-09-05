@@ -30,9 +30,11 @@ def _isolate_probe(monkeypatch):
     success test would leave `available=True` cached and the gate test would then make real
     LLM calls to a dead port with long timeouts."""
     llm_handler._PROBE_CACHE.clear()
-    monkeypatch.setattr(llm_handler, "OLLAMA_PROBE_TIMEOUT", 0.05)
-    yield
-    llm_handler._PROBE_CACHE.clear()
+    monkeypatch.setattr(llm_handler, "OLLAMA_HOST", "http://127.0.0.1:9")  # dead port: never
+    monkeypatch.setattr(llm_handler, "OLLAMA_PROBE_TIMEOUT", 0.05)          # hit a real local
+    monkeypatch.setattr(llm_handler, "OLLAMA_CONNECT_TIMEOUT", 0.05)        # Ollama, so the
+    yield                                                                    # suite is fast +
+    llm_handler._PROBE_CACHE.clear()                                         # deterministic
 
 
 class _Resp:
