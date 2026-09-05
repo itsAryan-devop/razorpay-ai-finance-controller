@@ -2,6 +2,10 @@
 
 > Razorpay AI Buildathon 2026 · **Track 04 (AI Finance Controller)** · solo submission
 
+**▶ Live demo:** https://razorpay-ai-finance-controller.streamlit.app/ — the dashboard,
+exception queue, hash-chained audit log, and LLM decision trace, running the exact pipeline
+in this repo (recomputed live on every render, no hardcoded numbers).
+
 An agent that reconciles Razorpay settlement data against a merchant's own sales ledger,
 reports an **honest match rate and a typed exception queue**, and uses an LLM *only* to
 resolve the ambiguous residue the rules refuse to guess — never to do arithmetic.
