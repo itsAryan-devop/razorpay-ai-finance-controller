@@ -1,6 +1,6 @@
 # Research 02 — Fintech Domain Deep-Dive (per track)
 
-*Agent research completed 2026-08-24. Full findings with sources.*
+*Research completed 2026-08-24. Full findings with sources.*
 
 Evaluation parameters per public write-ups: **Problem Taste, Build Quality, AI Judgment, Failure Recovery.** Round 2 = public repo + 5-min pitch + architecture doc, explicitly explaining what broke and how you fixed it. "Problem Taste" = domain understanding, which is what this doc is for. "Failure Recovery" = they want the messy paths (declines, disputes, exceptions, partial settlements), not the happy path.
 Sources: https://velonx.in/blog/razorpay-ai-buildathon-2026-tracks-eligibility-stipend-selection-process · https://www.placement-officer.com/2026/08/razorpay-ai-buildathon-2026-build-ai.html

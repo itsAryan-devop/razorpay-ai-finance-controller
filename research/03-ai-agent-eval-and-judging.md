@@ -1,6 +1,6 @@
 # Research 03 — AI Agent Winners, Judging Criteria & Eval Methodology
 
-*Agent research completed 2026-08-24. This is the single most decision-relevant report of the four.*
+*Research completed 2026-08-24. This is the single most decision-relevant report of the four.*
 
 ---
 

@@ -26,3 +26,7 @@ Thumbs.db
 # Downloaded third-party binary (fetched per tools/README.md instructions, checksum-
 # verified against the official release — not committed; tools/README.md itself IS tracked)
 tools/razorpay-mcp-server/
+
+# Local-only: editor/tooling config and internal planning journal (not part of the submission)
+.claude/
+NOTES.md

@@ -1,6 +1,6 @@
 # Build Plan — T4 Finance Controller (Reconciliation Agent)
 
-> The executable roadmap + architecture "mindmap". NOTES.md = research/context; this = what we're building and when.
+> The executable roadmap + architecture "mindmap": what we're building and when.
 > Deadline: **5 Sep 2026**. Budget: ~3-5 hrs/day × 11 days ≈ 40 hrs. **Freeze code ~Aug 30-31**, rest on README/video/form.
 
 ---
@@ -69,7 +69,7 @@ An AI Finance Controller that reconciles Razorpay settlement data against a merc
 ```
 
 ## Stack
-Python · Razorpay test-mode API via `razorpay-mcp-server` (auto-detects test key) and/or the official `razorpay` Python SDK · pandas for matching · Claude (Agent SDK or direct API) for the exception handler · Streamlit for UI · pytest + GitHub Actions CI.
+Python · Razorpay test-mode API via `razorpay-mcp-server` (auto-detects test key) and/or the official `razorpay` Python SDK · pandas for matching · an LLM (local Ollama by default, or the Anthropic API) for the exception handler · Streamlit for UI · pytest + GitHub Actions CI.
 
 ## Key principle stolen from competitor's path
 **Causal / as-of matching**: never let a later settlement cycle retroactively "fix" a current-period match. A refund that settles in a later cycle is a REFUND_IN_LATER_CYCLE exception at period close, not a silent match. This is the finance-ops equivalent of "no future data leak" and it's an honesty signal.
@@ -101,4 +101,4 @@ Keep `LOG.md` from day 1 — every bug, every "my first matcher gave X% false ma
 ## Day-1 GO/NO-GO gate
 Run the settlement spike (see `spike/check_settlements.py`). 
 - **Settlements populate in test mode** → proceed with T4 as designed.
-- **They don't / return empty** → two options, decide then: (a) synthetic settlement generator calibrated to the real recon schema (still fully valid — the track literally says "synthetic records"), or (b) pivot to T3 Revenue Recovery (pre-agreed fallback, research already done in NOTES.md §7 + research/04).
+- **They don't / return empty** → two options, decide then: (a) synthetic settlement generator calibrated to the real recon schema (still fully valid — the track literally says "synthetic records"), or (b) pivot to T3 Revenue Recovery (pre-agreed fallback, research already done — see research/04).

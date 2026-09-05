@@ -244,7 +244,7 @@ src/demo_refusals.py   scripted on-camera demo: 4 out-of-policy actions, all ref
 src/eval_holdout.py    seed-level held-out gate · src/eval_formats.py format-level held-out gate
 tests/                 79 pytest cases (adversarial guard, refusals, money attr., batch, format, three-way) in CI
 ARCHITECTURE.md        components · current-vs-target · scaling · failure modes
-NOTES.md PLAN.md LOG.md RESULTS.md   context, roadmap, failure trail, metrics
+PLAN.md LOG.md RESULTS.md            roadmap, failure trail, metrics
 research/              the research reports the design is grounded in (incl. Razorpay's
                        own architecture + competitive landscape, refreshed 2026-08-28)
 ```

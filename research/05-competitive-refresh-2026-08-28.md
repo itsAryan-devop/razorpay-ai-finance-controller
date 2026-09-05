@@ -1,6 +1,6 @@
 # Competitive refresh (2026-08-28) — Razorpay architecture, comparable submissions, gap analysis
 
-Three parallel research passes, run after the core engineering was done, specifically to
+Three research passes, run after the core engineering was done, specifically to
 answer: "is anything here weaker than what other students will submit, and what would make
 a judge trust this more?" Every claim below is sourced; unverifiable claims are flagged as
 such rather than asserted. Where this refresh **corrects** something in the earlier
@@ -21,7 +21,7 @@ hours/month reclaimed. This is the closest published analog to our own
 **Project Viveka** — **CORRECTION to 01-razorpay-intel.md**: it is specifically an
 oncall/incident root-cause-analysis agent (not a generic "shadow mode" agent), and is built
 on **LangGraph** ("Supervisor Agent is built on LangGraph, a framework for creating stateful
-multi-agent workflows"), not Claude Agent SDK as our stack-decision note in NOTES.md §5
+multi-agent workflows"), not Claude Agent SDK as an earlier stack-decision note
 loosely implied. Source: [engineering.razorpay.com](https://engineering.razorpay.com/project-viveka-from-30-minute-investigations-to-90-second-ai-analysis-e49ec9db2638).
 Metrics: MTTI 30min→90s, MTTR −50-60%. **The "~80% accuracy target, still in shadow mode as
 of Apr 2026" claim in 01-razorpay-intel.md (sourced there from a ZenML LLMOps-database

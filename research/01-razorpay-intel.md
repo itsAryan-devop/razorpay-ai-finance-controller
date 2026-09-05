@@ -1,6 +1,6 @@
 # Research 01 — Razorpay-Specific Intelligence
 
-*Agent research completed 2026-08-24. Full findings with sources.*
+*Research completed 2026-08-24. Full findings with sources.*
 
 ---
 
